@@ -117,18 +117,20 @@ def _run_easyocr(img_bytes: bytes) -> tuple[str, float]:
         score = _candidate_score(text, conf)
         return text, conf, score
 
-    # Fast pass candidates
-    candidates: list[tuple[str, float, float]] = []
-    candidates.append(_run_candidate(image_np, OCR_CONFIG_DEFAULT))
-    candidates.append(_run_candidate(image_np, OCR_CONFIG_HANDWRITING))
-    candidates.append(_run_candidate(high_contrast_np, OCR_CONFIG_HANDWRITING))
-
-    best = max(candidates, key=lambda x: x[2])
+    # Handwriting-first fast path: high recall for scanned notes with lower latency.
+    primary = _run_candidate(image_np, OCR_CONFIG_HANDWRITING)
     if (
-        len(best[0]) >= OCR_MIN_GOOD_TEXT
-        and (best[1] >= OCR_MIN_GOOD_CONF or best[2] >= OCR_MIN_GOOD_SCORE)
+        len(primary[0]) >= OCR_MIN_GOOD_TEXT
+        and (primary[1] >= OCR_MIN_GOOD_CONF or primary[2] >= OCR_MIN_GOOD_SCORE)
     ):
-        return best[0], _calibrate_confidence(best[0], best[1])
+        return primary[0], _calibrate_confidence(primary[0], primary[1])
+
+    candidates: list[tuple[str, float, float]] = [primary]
+
+    # Only attempt additional passes if primary result is weak.
+    candidates.append(_run_candidate(gray_np, OCR_CONFIG_HANDWRITING))
+    candidates.append(_run_candidate(high_contrast_np, OCR_CONFIG_HANDWRITING))
+    candidates.append(_run_candidate(image_np, OCR_CONFIG_DEFAULT))
 
     # Heavy fallback variants for difficult handwritten pages.
     try:
