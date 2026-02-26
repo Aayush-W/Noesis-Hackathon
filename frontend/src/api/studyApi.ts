@@ -36,9 +36,12 @@ const mockQuestions: PracticeQuestion[] = [
 ];
 
 export const studyApi = {
-  async generatePracticeTest(): Promise<PracticeQuestion[]> {
+  async generatePracticeTest(subjectId?: string): Promise<PracticeQuestion[]> {
     if (import.meta.env.VITE_USE_REAL_API === "true") {
-      const response = await apiClient.post<PracticeQuestion[]>("/study/generate");
+      if (!subjectId) {
+        throw new Error("A selected subject is required for subject-scoped study mode.");
+      }
+      const response = await apiClient.post<PracticeQuestion[]>(`/study/generate/${subjectId}`);
       return response.data;
     }
     await new Promise((resolve) => setTimeout(resolve, 900));
