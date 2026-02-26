@@ -1,5 +1,7 @@
 import { Brain, Flame, Gamepad2, ShieldCheck, Sparkles, Sword, Trophy, Zap } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { gsap } from "gsap";
 
 interface HomeProps {
   onLaunchMission: () => void;
@@ -9,9 +11,21 @@ interface HomeProps {
 
 const Home = ({ onLaunchMission, onOpenPracticeModal, onShowMessage }: HomeProps) => {
   const navigate = useNavigate();
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!shellRef.current) {
+      return;
+    }
+    gsap.fromTo(
+      shellRef.current.querySelectorAll("section"),
+      { y: 24, opacity: 0 },
+      { y: 0, opacity: 1, duration: 0.55, stagger: 0.09, ease: "power3.out" }
+    );
+  }, []);
 
   return (
-    <div className="home-shell">
+    <div className="home-shell" ref={shellRef}>
       <section className="game-hero">
         <div className="game-hero__content">
           <span className="eyebrow">Gamified study cockpit</span>

@@ -118,10 +118,8 @@ export const ChatInterface = ({ subjectId, subjectName }: ChatInterfaceProps) =>
                 coverage: 0
             };
 
-            // In a real implementation with our updated backend we'd pass history:
-            // const response = await qaApi.askQuestion(text, dummySubject, historyContext);
-            // But standard qaApi only accepts question, subject currently. Let's assume qaApi handles it or we adapt.
-            const response = await qaApi.askQuestion(text, dummySubject);
+            // Pass history to support Phase 2 Multi-Turn Memory
+            const response = await qaApi.askQuestion(text, dummySubject, historyContext);
 
             const sysMsg: ChatMessage = {
                 id: (Date.now() + 1).toString(),

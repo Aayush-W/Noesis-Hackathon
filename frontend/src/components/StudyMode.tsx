@@ -1,9 +1,9 @@
-import { FileSpreadsheet, FileText, Globe, Upload, X } from "lucide-react";
+import { FileSpreadsheet, FileText, Upload, X } from "lucide-react";
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 import { studyApi } from "../api/studyApi";
 import { useSubject } from "../hooks/useSubject";
 
-type PracticeSourceTab = "upload" | "paste" | "drive" | "flashcards";
+type PracticeSourceTab = "upload" | "paste";
 
 interface StudyModeProps {
   open: boolean;
@@ -13,9 +13,7 @@ interface StudyModeProps {
 
 const tabLabels: Record<PracticeSourceTab, string> = {
   upload: "Upload files",
-  paste: "Paste text",
-  drive: "Google Drive",
-  flashcards: "Flashcard sets"
+  paste: "Paste text"
 };
 
 const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
@@ -23,23 +21,16 @@ const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
   const [tab, setTab] = useState<PracticeSourceTab>("upload");
   const [pasteText, setPasteText] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [driveConnected, setDriveConnected] = useState(false);
-  const [flashcardsSelected, setFlashcardsSelected] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const canGenerate = useMemo(() => {
     if (tab === "upload") {
       return selectedFiles.length > 0;
     }
-    if (tab === "paste") {
-      return pasteText.trim().length > 25;
-    }
-    if (tab === "drive") {
-      return driveConnected;
-    }
-    return flashcardsSelected;
-  }, [driveConnected, flashcardsSelected, pasteText, selectedFiles.length, tab]);
+    return pasteText.trim().length > 25;
+  }, [pasteText, selectedFiles.length, tab]);
 
   if (!open) {
     return null;
@@ -53,16 +44,28 @@ const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
     if (!canGenerate || generating) {
       return;
     }
+    setError("");
     setGenerating(true);
     try {
-      await studyApi.generatePracticeTest(selectedSubject.id);
-      onGenerated(`Practice test generated for ${selectedSubject.name} from selected material.`);
+      const generated = await studyApi.generatePracticeTest(selectedSubject.id);
+      const mcqCount = generated.mcqs?.length ?? 0;
+      const saqCount = generated.saqs?.length ?? 0;
+
+      if (mcqCount !== 5 || saqCount !== 3) {
+        throw new Error(`Study mode expected 5 MCQs + 3 SAQs, but received ${mcqCount} MCQs and ${saqCount} SAQs.`);
+      }
+
+      onGenerated(
+        `Practice test generated for ${selectedSubject.name}: ${mcqCount} MCQs + ${saqCount} SAQs.`
+      );
       onClose();
       setPasteText("");
       setSelectedFiles([]);
-      setDriveConnected(false);
-      setFlashcardsSelected(false);
       setTab("upload");
+    } catch (generationError) {
+      const message =
+        generationError instanceof Error ? generationError.message : "Failed to generate study questions.";
+      setError(message);
     } finally {
       setGenerating(false);
     }
@@ -141,36 +144,7 @@ const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
             />
           ) : null}
 
-          {tab === "drive" ? (
-            <div className="upload-card upload-card--small">
-              <Globe size={48} />
-              <h4>Connect Google Drive to import your notes.</h4>
-              <button
-                type="button"
-                onClick={() => {
-                  setDriveConnected(true);
-                  onGenerated("Google Drive connected (mock). You can now generate.");
-                }}
-              >
-                {driveConnected ? "Drive connected" : "Connect Drive"}
-              </button>
-            </div>
-          ) : null}
-
-          {tab === "flashcards" ? (
-            <div className="upload-card upload-card--small">
-              <h4>Use existing flashcard sets as practice material.</h4>
-              <button
-                type="button"
-                onClick={() => {
-                  setFlashcardsSelected(true);
-                  onGenerated("Flashcard set selected for practice generation.");
-                }}
-              >
-                {flashcardsSelected ? "Flashcard set selected" : "Choose flashcard sets"}
-              </button>
-            </div>
-          ) : null}
+          {error ? <p className="evidence-panel__empty">{error}</p> : null}
         </div>
 
         <footer className="overlay__footer">

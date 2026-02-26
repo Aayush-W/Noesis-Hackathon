@@ -7,7 +7,6 @@ interface NavbarProps {
   avatarUrl?: string;
   onSearchChange: (value: string) => void;
   onOpenPracticeModal: () => void;
-  onOpenStudyGuidesModal: () => void;
   onProfileClick: () => void;
 }
 
@@ -17,7 +16,6 @@ const Navbar = ({
   avatarUrl,
   onSearchChange,
   onOpenPracticeModal,
-  onOpenStudyGuidesModal,
   onProfileClick
 }: NavbarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -55,15 +53,6 @@ const Navbar = ({
                 }}
               >
                 Generate practice tests
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenStudyGuidesModal();
-                  setMenuOpen(false);
-                }}
-              >
-                Generate study guides
               </button>
             </div>
           ) : null}

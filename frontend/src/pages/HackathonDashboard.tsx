@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Upload, MessageSquare, BookOpen } from "lucide-react";
 import { ChatInterface } from "../components/Hackathon/ChatInterface";
 import { StudyModeTab } from "../components/Hackathon/StudyModeTab";
+import { uploadApi } from "../api/uploadApi";
 
 // Mock subjects to fulfill the 'exactly 3 subjects' requirement
 const FIXED_SUBJECTS = [
@@ -22,12 +23,19 @@ const HackathonDashboard = () => {
         if (e.target.files && e.target.files.length > 0) {
             setIsUploading(true);
             const newFiles = Array.from(e.target.files);
-
-            // Simulate upload delay
-            await new Promise(resolve => setTimeout(resolve, 1500));
-
-            setFiles([...files, ...newFiles]);
-            setIsUploading(false);
+            
+            try {
+                // Upload files to actual backend RAG pipeline sequentially
+                for (const file of newFiles) {
+                    await uploadApi.uploadNotes(file, activeSubjectId);
+                }
+                setFiles([...files, ...newFiles]);
+            } catch (error) {
+                console.error("Upload failed", error);
+                alert("Failed to upload notes to knowledge base.");
+            } finally {
+                setIsUploading(false);
+            }
         }
     };
 

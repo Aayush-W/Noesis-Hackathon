@@ -2,7 +2,6 @@ import { Suspense, lazy, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
-import StudyGuideModal from "./components/StudyGuideModal";
 import StudyMode from "./components/StudyMode";
 import { useAuth } from "./hooks/useAuth";
 import { useSubject } from "./hooks/useSubject";
@@ -22,7 +21,6 @@ const App = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [practiceOpen, setPracticeOpen] = useState(false);
-  const [studyGuideOpen, setStudyGuideOpen] = useState(false);
   const [missionOpen, setMissionOpen] = useState(false);
   const [toast, setToast] = useState("");
 
@@ -63,7 +61,6 @@ const App = () => {
           avatarUrl={user?.avatarUrl}
           onSearchChange={setSearchValue}
           onOpenPracticeModal={() => setPracticeOpen(true)}
-          onOpenStudyGuidesModal={() => setStudyGuideOpen(true)}
           onProfileClick={() => showToast("Profile menu can be connected to auth settings.")}
         />
 
@@ -85,7 +82,6 @@ const App = () => {
               element={
                 <FlashcardsWorkspace
                   onOpenPracticeModal={() => setPracticeOpen(true)}
-                  onOpenStudyGuidesModal={() => setStudyGuideOpen(true)}
                 />
               }
             />
@@ -117,12 +113,6 @@ const App = () => {
           onShowMessage={showToast}
         />
       </Suspense>
-
-      <StudyGuideModal
-        open={studyGuideOpen}
-        onClose={() => setStudyGuideOpen(false)}
-        onGenerated={(message) => showToast(message)}
-      />
 
       {toast ? <div className="toast">{toast}</div> : null}
     </div>
