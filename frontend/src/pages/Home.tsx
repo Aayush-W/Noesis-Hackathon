@@ -1,365 +1,232 @@
-import { ArrowLeftRight, Play, RotateCcw, Shield, Sparkles, Swords, Trophy, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Brain, Flame, Gamepad2, ShieldCheck, Sparkles, Sword, Trophy, Zap } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 interface HomeProps {
   onOpenPracticeModal: () => void;
   onShowMessage: (message: string) => void;
 }
 
-type IslandKey = "kind" | "reality" | "mindful" | "treasure";
-type ArenaMode = "test" | "quiz";
+type QuizMode = "test" | "general";
 
-interface IslandData {
-  key: IslandKey;
-  title: string;
-  subtitle: string;
-  description: string;
-  color: string;
+interface QuizQuestion {
+  question: string;
+  options: string[];
+  answer: string;
 }
 
-interface QuizRound {
-  prompt: string;
-  choices: string[];
-  answer: number;
-}
-
-const islands: IslandData[] = [
-  {
-    key: "kind",
-    title: "Kind Kingdom",
-    subtitle: "It's cool to be kind",
-    description: "Block troublemakers and spread good vibes to climb the kingdom.",
-    color: "kind"
-  },
-  {
-    key: "reality",
-    title: "Reality River",
-    subtitle: "Don't fall for fake",
-    description: "Spot scams and phishers before they trick your crew.",
-    color: "reality"
-  },
-  {
-    key: "mindful",
-    title: "Mindful Mountain",
-    subtitle: "Share with care",
-    description: "Route every post to the right audience and avoid oversharing.",
-    color: "mindful"
-  },
-  {
-    key: "treasure",
-    title: "Tower of Treasure",
-    subtitle: "Secure your secrets",
-    description: "Collect private data and defend it with strong passwords.",
-    color: "treasure"
-  }
-];
-
-const rounds: Record<IslandKey, QuizRound[]> = {
-  kind: [
+const questions: Record<QuizMode, QuizQuestion[]> = {
+  test: [
     {
-      prompt: "Someone is being rude in comments. What is the best first move?",
-      choices: ["Reply with worse language", "Block/report and inform an adult", "Share their profile publicly"],
-      answer: 1
+      question: "In a confidence-gated system, what should happen below threshold?",
+      options: ["Generate from memory", "Return Not Found", "Search internet", "Skip citation"],
+      answer: "Return Not Found"
     },
     {
-      prompt: "What helps make online communities healthier?",
-      choices: ["Positive and respectful replies", "Sharing rumors", "Ignoring every message"],
-      answer: 0
+      question: "Which mode is best for exam-like pressure?",
+      options: ["Arcade quiz", "Mock test arena", "Casual chat", "Folder view"],
+      answer: "Mock test arena"
     }
   ],
-  reality: [
+  general: [
     {
-      prompt: "A popup says 'You won a free phone'. What should you do?",
-      choices: ["Click now", "Ignore and close", "Enter email to verify"],
-      answer: 1
+      question: "Best quick session for revision bursts?",
+      options: ["General quiz arena", "Full mock test", "Upload modal", "Heatmap tab"],
+      answer: "General quiz arena"
     },
     {
-      prompt: "Best way to validate a surprising claim?",
-      choices: ["Forward immediately", "Check two trusted sources", "Trust only comments"],
-      answer: 1
-    }
-  ],
-  mindful: [
-    {
-      prompt: "A post includes your address. Best action?",
-      choices: ["Post publicly", "Share with everyone", "Send to lockbox/trash"],
-      answer: 2
-    },
-    {
-      prompt: "Before posting, you should:",
-      choices: ["Pause and verify audience", "Post first, think later", "Tag everyone"],
-      answer: 0
-    }
-  ],
-  treasure: [
-    {
-      prompt: "Which password is strongest?",
-      choices: ["banana123", "S7#p!mR2q@", "myname2008"],
-      answer: 1
-    },
-    {
-      prompt: "Best account protection habit?",
-      choices: ["Use one password everywhere", "Share password with friends", "Unique passwords + private"],
-      answer: 2
+      question: "What keeps engagement high in gamified UI?",
+      options: ["No feedback", "Static colors", "Progress + rewards", "Hidden controls"],
+      answer: "Progress + rewards"
     }
   ]
 };
 
 const Home = ({ onOpenPracticeModal, onShowMessage }: HomeProps) => {
-  const [selectedIsland, setSelectedIsland] = useState<IslandData | null>(null);
-  const [arenaMode, setArenaMode] = useState<ArenaMode>("test");
-  const [roundIndex, setRoundIndex] = useState(0);
-  const [focusIndex, setFocusIndex] = useState(0);
-  const [xp, setXp] = useState(90);
-  const [streak, setStreak] = useState(3);
-  const [completed, setCompleted] = useState<Record<IslandKey, boolean>>({
-    kind: false,
-    reality: false,
-    mindful: false,
-    treasure: false
-  });
+  const navigate = useNavigate();
+  const [mode, setMode] = useState<QuizMode>("test");
+  const [index, setIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
 
-  const activeKey = selectedIsland?.key ?? "kind";
-  const currentRounds = rounds[activeKey];
-  const currentRound = currentRounds[roundIndex];
+  const currentQuestion = useMemo(() => questions[mode][index], [index, mode]);
 
-  const progress = useMemo(() => {
-    const total = Object.values(completed).filter(Boolean).length;
-    return Math.round((total / islands.length) * 100);
-  }, [completed]);
-
-  const onChoice = (choiceIndex: number) => {
-    if (!selectedIsland) {
+  const selectOption = (option: string) => {
+    if (selected) {
       return;
     }
-
-    if (choiceIndex === currentRound.answer) {
-      onShowMessage("Correct move. +20 XP");
-      setXp((value) => value + 20);
-      if (roundIndex === currentRounds.length - 1) {
-        setCompleted((prev) => ({ ...prev, [selectedIsland.key]: true }));
-        setSelectedIsland(null);
-        setRoundIndex(0);
-        setFocusIndex(0);
-        setStreak((value) => value + 1);
-        return;
-      }
-      setRoundIndex((value) => value + 1);
-      setFocusIndex(0);
-      return;
+    setSelected(option);
+    const isCorrect = option === currentQuestion.answer;
+    if (isCorrect) {
+      setScore((current) => current + 10);
+      onShowMessage("Correct! +10 XP");
+    } else {
+      onShowMessage(`Incorrect. Correct answer: ${currentQuestion.answer}`);
     }
-
-    onShowMessage("Not quite. Try again.");
   };
 
-  useEffect(() => {
-    if (!selectedIsland) {
-      return;
-    }
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft") {
-        setFocusIndex((value) => (value - 1 + currentRound.choices.length) % currentRound.choices.length);
-      }
-      if (event.key === "ArrowRight") {
-        setFocusIndex((value) => (value + 1) % currentRound.choices.length);
-      }
-      if (event.key === " " || event.key === "Enter") {
-        event.preventDefault();
-        onChoice(focusIndex);
-      }
-      if (event.key === "Escape") {
-        setSelectedIsland(null);
-        setRoundIndex(0);
-        setFocusIndex(0);
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentRound.choices.length, focusIndex, selectedIsland]);
+  const nextQuestion = () => {
+    const list = questions[mode];
+    setSelected(null);
+    setIndex((current) => (current + 1) % list.length);
+  };
 
   return (
-    <div className="interland-shell">
-      <header className="interland-header">
-        <div>
-          <p>Be Internet Awesome</p>
-          <h1>Interland-inspired Game Map</h1>
-          <span>Play your way to safer, smarter online behavior</span>
-        </div>
-        <div className="interland-hud">
-          <article>
-            <Sparkles size={16} />
-            <div>
-              <strong>{xp}</strong>
-              <span>XP</span>
-            </div>
-          </article>
-          <article>
-            <Trophy size={16} />
-            <div>
-              <strong>{progress}%</strong>
-              <span>World Progress</span>
-            </div>
-          </article>
-          <article>
-            <Swords size={16} />
-            <div>
-              <strong>{streak}</strong>
-              <span>Streak</span>
-            </div>
-          </article>
-        </div>
-      </header>
-
-      <section className="interland-map">
-        <div className="sky-layer cloud-a"></div>
-        <div className="sky-layer cloud-b"></div>
-        <div className="sky-layer cloud-c"></div>
-
-        {islands.map((island) => (
-          <article className={`island-card island-${island.color}`} key={island.key}>
-            <div className="island-top">
-              <span>{island.subtitle}</span>
-              {completed[island.key] ? <Shield size={16} /> : null}
-            </div>
-            <h3>{island.title}</h3>
-            <p>{island.description}</p>
-            <div className="island-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedIsland(island);
-                  setRoundIndex(0);
-                  setFocusIndex(0);
-                }}
-              >
-                <Play size={15} />
-                Play
-              </button>
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => {
-                  setCompleted((prev) => ({ ...prev, [island.key]: false }));
-                  onShowMessage(`${island.title} progress reset.`);
-                }}
-              >
-                <RotateCcw size={15} />
-                Replay
-              </button>
-            </div>
-          </article>
-        ))}
-      </section>
-
-      <section className="arena-section">
-        <div className="arena-head">
-          <h2>Game Modes</h2>
-          <div className="arena-toggle">
-            <button
-              type="button"
-              className={arenaMode === "test" ? "active" : ""}
-              onClick={() => setArenaMode("test")}
-            >
-              Test Arena
+    <div className="home-shell">
+      <section className="game-hero">
+        <div className="game-hero__content">
+          <span className="eyebrow">Gamified study cockpit</span>
+          <h1>Level up your preparation with missions, XP and quiz battles</h1>
+          <p>
+            A clean skeleton to build on: fewer blocks, clearer actions, and fun-first learning flow for test
+            prep + general practice.
+          </p>
+          <div className="hero-actions">
+            <button type="button" onClick={onOpenPracticeModal}>
+              <Sword size={18} />
+              Launch Test Mission
             </button>
             <button
               type="button"
-              className={arenaMode === "quiz" ? "active" : ""}
-              onClick={() => setArenaMode("quiz")}
+              className="button-ghost"
+              onClick={() => navigate("/flashcards")}
             >
-              General Quiz
+              <Brain size={18} />
+              Open Quiz Workspace
             </button>
           </div>
         </div>
 
-        {arenaMode === "test" ? (
-          <article className="arena-card interland-panel">
-            <h3>Test Arena Mission</h3>
-            <p>Timed challenge with stricter scoring and subject-scoped practice flow.</p>
-            <ul>
-              <li>5 MCQ + 3 short answers</li>
-              <li>Confidence-tagged feedback</li>
-              <li>Source-citation review</li>
-            </ul>
-            <button type="button" onClick={onOpenPracticeModal}>
-              Launch Test Arena
-            </button>
-          </article>
-        ) : (
-          <article className="arena-card interland-panel">
+        <div className="game-scene" aria-hidden="true">
+          <div className="scene-orb"></div>
+          <div className="scene-ring"></div>
+          <div className="scene-chip chip-a"></div>
+          <div className="scene-chip chip-b"></div>
+          <div className="scene-chip chip-c"></div>
+        </div>
+      </section>
+
+      <section className="hud-strip">
+        <article>
+          <Flame size={18} />
+          <strong>7 day streak</strong>
+          <span>Keep it burning</span>
+        </article>
+        <article>
+          <Zap size={18} />
+          <strong>{score} XP</strong>
+          <span>From quick rounds</span>
+        </article>
+        <article>
+          <Trophy size={18} />
+          <strong>Gold League</strong>
+          <span>Top 12% this week</span>
+        </article>
+      </section>
+
+      <section className="arena-grid">
+        <article className="arena-card arena-card--test">
+          <div className="arena-head">
+            <ShieldCheck size={20} />
+            <h3>Test Arena</h3>
+          </div>
+          <p>Timed mock tests with stricter scoring and confidence-aware hints.</p>
+          <div className="tag-row">
+            <span>Timed rounds</span>
+            <span>Ranked mode</span>
+            <span>Exam scope</span>
+          </div>
+          <button type="button" onClick={onOpenPracticeModal}>
+            Start test arena
+          </button>
+        </article>
+
+        <article className="arena-card arena-card--quiz">
+          <div className="arena-head">
+            <Gamepad2 size={20} />
             <h3>General Quiz Arena</h3>
-            <p>Fast arcade mode with rotating micro-questions and combo streaks.</p>
-            <ul>
-              <li>Short rounds with instant feedback</li>
-              <li>XP rewards per correct choice</li>
-              <li>Keyboard or touch controls</li>
-            </ul>
+          </div>
+          <p>Fast and playful quizzes for memory, speed, and concept retention.</p>
+          <div className="tag-row">
+            <span>Quick play</span>
+            <span>Bonus XP</span>
+            <span>Topic shuffle</span>
+          </div>
+          <button type="button" onClick={() => navigate("/flashcards")}>
+            Play quick quiz
+          </button>
+        </article>
+      </section>
+
+      <section className="quiz-play">
+        <div className="quiz-play__header">
+          <h2>Quiz play</h2>
+          <div className="mode-switch">
             <button
               type="button"
+              className={mode === "test" ? "active" : ""}
               onClick={() => {
-                setSelectedIsland(islands[1]);
-                setRoundIndex(0);
-                setFocusIndex(0);
+                setMode("test");
+                setIndex(0);
+                setSelected(null);
               }}
             >
-              Play Quick Quiz
+              Test mode
             </button>
-          </article>
-        )}
-      </section>
-
-      {selectedIsland ? (
-        <div className="interland-overlay">
-          <div className="interland-modal">
-            <header>
-              <div>
-                <p>{selectedIsland.subtitle}</p>
-                <h3>{selectedIsland.title}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedIsland(null);
-                  setRoundIndex(0);
-                  setFocusIndex(0);
-                }}
-                aria-label="Close challenge"
-              >
-                <X size={18} />
-              </button>
-            </header>
-
-            <div className="challenge-hud">
-              <span>
-                Round {roundIndex + 1}/{currentRounds.length}
-              </span>
-              <span>
-                <ArrowLeftRight size={14} /> Use arrow keys
-              </span>
-              <span>Press Enter/Space to select</span>
-            </div>
-
-            <div className="challenge-card">
-              <h4>{currentRound.prompt}</h4>
-              <div className="challenge-choices">
-                {currentRound.choices.map((choice, idx) => (
-                  <button
-                    key={choice}
-                    type="button"
-                    className={focusIndex === idx ? "focused" : ""}
-                    onMouseEnter={() => setFocusIndex(idx)}
-                    onClick={() => onChoice(idx)}
-                  >
-                    {choice}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <button
+              type="button"
+              className={mode === "general" ? "active" : ""}
+              onClick={() => {
+                setMode("general");
+                setIndex(0);
+                setSelected(null);
+              }}
+            >
+              General quiz
+            </button>
           </div>
         </div>
-      ) : null}
+
+        <article className="question-card">
+          <span className="question-chip">
+            <Sparkles size={14} />
+            {mode === "test" ? "Mission challenge" : "Arcade challenge"}
+          </span>
+          <h3>{currentQuestion.question}</h3>
+          <div className="option-grid">
+            {currentQuestion.options.map((option) => {
+              const isChosen = selected === option;
+              const isAnswer = currentQuestion.answer === option;
+              const stateClass = selected
+                ? isAnswer
+                  ? "correct"
+                  : isChosen
+                    ? "wrong"
+                    : ""
+                : "";
+
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  className={`option-button ${stateClass}`}
+                  onClick={() => selectOption(option)}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+          <div className="question-footer">
+            <button type="button" onClick={nextQuestion}>
+              Next question
+            </button>
+            <button type="button" className="button-ghost" onClick={() => navigate("/subject/jee-main")}>
+              View exam dashboard
+            </button>
+          </div>
+        </article>
+      </section>
     </div>
   );
 };
