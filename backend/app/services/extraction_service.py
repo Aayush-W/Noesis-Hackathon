@@ -1,4 +1,5 @@
 import io
+import re
 from typing import Optional
 
 import easyocr
@@ -28,6 +29,9 @@ OCR_CONFIG_HANDWRITING = {
     "text_threshold": 0.4,
     "low_text": 0.2,
 }
+OCR_MIN_GOOD_TEXT = 220
+OCR_MIN_GOOD_CONF = 0.50
+OCR_MIN_GOOD_SCORE = 0.48
 
 
 def _get_ocr_reader() -> easyocr.Reader:
@@ -59,6 +63,11 @@ def _run_easyocr(img_bytes: bytes) -> tuple[str, float]:
     gray_np = np.array(image.convert("L"))
     high_contrast_np = np.clip((gray_np.astype(np.float32) * 1.35), 0, 255).astype(np.uint8)
 
+    def _normalize_text(text: str) -> str:
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
     def parse_results(results: list) -> tuple[str, float]:
         if not results:
             return "", 0.0
@@ -79,24 +88,69 @@ def _run_easyocr(img_bytes: bytes) -> tuple[str, float]:
             return "", 0.0
 
         avg_conf = sum(confidences) / len(confidences) if confidences else 0.0
-        return "\n".join(lines), avg_conf
+        return _normalize_text("\n".join(lines)), avg_conf
 
-    # Pass 1: default OCR on original RGB page
-    text, conf = parse_results(reader.readtext(image_np, **OCR_CONFIG_DEFAULT))
-    if text:
-        return text, conf
+    def _text_quality_score(text: str) -> float:
+        if not text:
+            return 0.0
+        char_len = len(text)
+        letters = sum(1 for ch in text if ch.isalpha())
+        alpha_ratio = letters / max(char_len, 1)
+        words = [w for w in re.split(r"\s+", text) if w]
+        word_count = len(words)
+        length_score = min(char_len / 800.0, 1.0)
+        word_score = min(word_count / 120.0, 1.0)
+        alpha_score = min(max(alpha_ratio, 0.0), 1.0)
+        return 0.50 * length_score + 0.30 * alpha_score + 0.20 * word_score
 
-    # Pass 2: handwriting-sensitive OCR on original RGB page
-    text, conf = parse_results(reader.readtext(image_np, **OCR_CONFIG_HANDWRITING))
-    if text:
-        return text, conf
+    def _candidate_score(text: str, conf: float) -> float:
+        quality = _text_quality_score(text)
+        return 0.55 * conf + 0.45 * quality
 
-    # Pass 3: handwriting-sensitive OCR on high-contrast grayscale
-    text, conf = parse_results(reader.readtext(high_contrast_np, **OCR_CONFIG_HANDWRITING))
-    if text:
-        return text, conf
+    def _calibrate_confidence(text: str, conf: float) -> float:
+        quality = _text_quality_score(text)
+        calibrated = 0.45 * conf + 0.55 * quality
+        return max(0.0, min(1.0, calibrated))
 
-    return "", 0.0
+    def _run_candidate(img: np.ndarray, config: dict) -> tuple[str, float, float]:
+        text, conf = parse_results(reader.readtext(img, **config))
+        score = _candidate_score(text, conf)
+        return text, conf, score
+
+    # Fast pass candidates
+    candidates: list[tuple[str, float, float]] = []
+    candidates.append(_run_candidate(image_np, OCR_CONFIG_DEFAULT))
+    candidates.append(_run_candidate(image_np, OCR_CONFIG_HANDWRITING))
+    candidates.append(_run_candidate(high_contrast_np, OCR_CONFIG_HANDWRITING))
+
+    best = max(candidates, key=lambda x: x[2])
+    if (
+        len(best[0]) >= OCR_MIN_GOOD_TEXT
+        and (best[1] >= OCR_MIN_GOOD_CONF or best[2] >= OCR_MIN_GOOD_SCORE)
+    ):
+        return best[0], _calibrate_confidence(best[0], best[1])
+
+    # Heavy fallback variants for difficult handwritten pages.
+    try:
+        import cv2
+
+        blur = cv2.GaussianBlur(gray_np, (3, 3), 0)
+        adaptive = cv2.adaptiveThreshold(
+            blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 11
+        )
+        h, w = adaptive.shape
+        upscaled = cv2.resize(adaptive, (int(w * 1.6), int(h * 1.6)), interpolation=cv2.INTER_CUBIC)
+
+        candidates.append(_run_candidate(adaptive, OCR_CONFIG_HANDWRITING))
+        candidates.append(_run_candidate(upscaled, OCR_CONFIG_HANDWRITING))
+    except Exception:
+        pass
+
+    best = max(candidates, key=lambda x: x[2])
+    if not best[0]:
+        return "", 0.0
+
+    return best[0], _calibrate_confidence(best[0], best[1])
 
 
 async def extract_text_from_file(file_bytes: bytes, filename: str) -> dict:
@@ -129,7 +183,7 @@ async def extract_pdf(file_bytes: bytes) -> dict:
         # Sparse native text layer likely indicates scanned page.
         if len(text) < OCR_TEXT_THRESHOLD:
             ocr_used = True
-            pix = page.get_pixmap(dpi=300)
+            pix = page.get_pixmap(dpi=220)
             img_bytes = pix.tobytes("png")
             result = await extract_image(img_bytes, page_ref=f"p.{page_num + 1}")
             ocr_text = result.get("text", "").strip()

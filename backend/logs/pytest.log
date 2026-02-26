@@ -116,18 +116,18 @@ INFO     app.services.rag_service:rag_service.py:297 Deduplicated chunks: 3 -> 2
 INFO     app.services.rag_service:rag_service.py:297 Deduplicated chunks: 2 -> 1
 DEBUG    asyncio:proactor_events.py:631 Using proactor: IocpProactor
 DEBUG    asyncio:proactor_events.py:631 Using proactor: IocpProactor
-INFO     app.services.rag_service:rag_service.py:436 Query for Biology: random question (keywords: ['random', 'question'])
-INFO     app.services.rag_service:rag_service.py:440 Generated 1 queries for retrieval
-DEBUG    app.services.rag_service:rag_service.py:460 Retrieved 0 results for query: random question
-INFO     app.services.rag_service:rag_service.py:493 No results found for query in Biology
+INFO     app.services.rag_service:rag_service.py:439 Query for Biology: random question (keywords: ['random', 'question'])
+INFO     app.services.rag_service:rag_service.py:443 Generated 1 queries for retrieval
+DEBUG    app.services.rag_service:rag_service.py:463 Retrieved 0 results for query: random question
+INFO     app.services.rag_service:rag_service.py:496 No results found for query in Biology
 DEBUG    asyncio:proactor_events.py:631 Using proactor: IocpProactor
-INFO     app.services.rag_service:rag_service.py:436 Query for Biology: test question (keywords: ['test', 'question'])
-INFO     app.services.rag_service:rag_service.py:440 Generated 1 queries for retrieval
+INFO     app.services.rag_service:rag_service.py:439 Query for Biology: test question (keywords: ['test', 'question'])
+INFO     app.services.rag_service:rag_service.py:443 Generated 1 queries for retrieval
 DEBUG    asyncio:proactor_events.py:631 Using proactor: IocpProactor
-INFO     app.services.rag_service:rag_service.py:436 Query for Biology: What is photosynthesis? (keywords: ['photosynthesis'])
-INFO     app.services.rag_service:rag_service.py:440 Generated 1 queries for retrieval
-DEBUG    app.services.rag_service:rag_service.py:460 Retrieved 1 results for query: What is photosynthesis?
-INFO     app.services.rag_service:rag_service.py:506 Confidence tier: HIGH (score: 1.0)
+INFO     app.services.rag_service:rag_service.py:439 Query for Biology: What is photosynthesis? (keywords: ['photosynthesis'])
+INFO     app.services.rag_service:rag_service.py:443 Generated 1 queries for retrieval
+DEBUG    app.services.rag_service:rag_service.py:463 Retrieved 1 results for query: What is photosynthesis?
+INFO     app.services.rag_service:rag_service.py:509 Confidence tier: HIGH (score: 1.0)
 INFO     app.services.rag_service:rag_service.py:356 Extracted 1 citations from answer
-INFO     app.services.rag_service:rag_service.py:557 Generated answer with 1 citations
+INFO     app.services.rag_service:rag_service.py:575 Generated answer with 1 citations
 DEBUG    asyncio:proactor_events.py:631 Using proactor: IocpProactor
