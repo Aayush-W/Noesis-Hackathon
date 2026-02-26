@@ -2,7 +2,7 @@ import google.generativeai as genai
 import re
 import logging
 import asyncio
-from typing import Optional, List, Tuple
+from typing import List, Tuple
 from .embedding_service import embed_query
 from app.vectorstore.chroma_client import get_collection
 from app.core.config import settings
@@ -10,6 +10,8 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
+
+NOT_FOUND_TEMPLATE = "Not found in your notes for {subject_name}"
 
 # Anti-Hallucination Configuration with refined thresholds
 CONFIDENCE_THRESHOLDS = {
@@ -354,6 +356,48 @@ def extract_citations(answer_text: str, chunks: list[dict]) -> list[dict]:
     logger.info(f"Extracted {len(citations)} citations from answer")
     return citations
 
+
+def _format_evidence_snippet(chunk: dict) -> str:
+    snippet = chunk.get("text", "").replace("\n", " ").strip()
+    if len(snippet) > 240:
+        snippet = f"{snippet[:240].rstrip()}..."
+    file_name = chunk.get("fileName", "Unknown")
+    location_ref = chunk.get("locationRef", "Unknown location")
+    return f"[{file_name} | {location_ref}] {snippet}"
+
+
+def _build_evidence_snippets(chunks: list[dict], citations: list[dict] | None = None, limit: int = 3) -> list[str]:
+    if not chunks:
+        return []
+
+    preferred_chunks: list[dict] = []
+    if citations:
+        citation_keys = {(c.get("fileName"), c.get("locationRef")) for c in citations}
+        preferred_chunks = [
+            c for c in chunks if (c.get("fileName"), c.get("locationRef")) in citation_keys
+        ]
+
+    ordered = preferred_chunks + [
+        c for c in chunks if c not in preferred_chunks
+    ]
+    return [_format_evidence_snippet(chunk) for chunk in ordered[:limit]]
+
+
+def _not_found_response(
+    subject_name: str,
+    confidence_score: float = 0.0,
+    chunk_dicts: list[dict] | None = None
+) -> dict:
+    chunks = chunk_dicts or []
+    return {
+        "answer": NOT_FOUND_TEMPLATE.format(subject_name=subject_name),
+        "confidenceTier": "NOT_FOUND",
+        "confidenceScore": round(confidence_score, 4),
+        "citations": [],
+        "evidenceSnippets": _build_evidence_snippets(chunks, limit=3),
+        "topChunkIds": [c.get("chunkId") for c in chunks if c.get("chunkId")],
+    }
+
 async def ask_question(
     query: str,
     subject_id: str,
@@ -440,14 +484,7 @@ async def ask_question(
         # Handle empty results
         if not chunk_dicts:
             logger.info(f"No results found for query in {subject_name}")
-            return {
-                "answer": f"Not found in your notes for {subject_name}",
-                "confidenceTier": "NOT_FOUND",
-                "confidenceScore": 0.0,
-                "citations": [],
-                "evidenceSnippets": [],
-                "topChunkIds": []
-            }
+            return _not_found_response(subject_name=subject_name, confidence_score=0.0, chunk_dicts=[])
         
         # Step 6: Compute confidence with enhanced logic
         similarities_dedup = [c["similarity"] for c in chunk_dicts]
@@ -461,16 +498,13 @@ async def ask_question(
         
         logger.info(f"Confidence tier: {confidence['tier']} (score: {confidence['score']})")
         
-        # Gate on confidence threshold
-        if confidence["tier"] == "NOT_FOUND":
-            return {
-                "answer": f"Not found in your notes for {subject_name}",
-                "confidenceTier": "NOT_FOUND",
-                "confidenceScore": confidence["score"],
-                "citations": [],
-                "evidenceSnippets": [],
-                "topChunkIds": [c.get("chunkId") for c in chunk_dicts]
-            }
+        # Strict gate: LOW and NOT_FOUND both refuse answering.
+        if confidence["tier"] in {"NOT_FOUND", "LOW"}:
+            return _not_found_response(
+                subject_name=subject_name,
+                confidence_score=confidence["score"],
+                chunk_dicts=chunk_dicts
+            )
         
         # Step 6: Build grounded prompt
         sources_block = build_sources_block(chunk_dicts)
@@ -485,16 +519,33 @@ async def ask_question(
         # Step 7: Generate response
         try:
             response = model.generate_content(prompt)
-            answer_text = response.text
+            answer_text = (response.text or "").strip()
         except Exception as e:
             logger.error(f"Generation failed: {str(e)}")
             raise RAGError(f"Failed to generate answer: {str(e)}")
+
+        # Empty or explicit not-found outputs are normalized to strict NOT_FOUND.
+        if not answer_text or answer_text.lower().startswith("not found in your notes"):
+            return _not_found_response(
+                subject_name=subject_name,
+                confidence_score=confidence["score"],
+                chunk_dicts=chunk_dicts
+            )
         
         # Step 8: Extract citations
         citations = extract_citations(answer_text, chunk_dicts)
         
-        # Provide evidence snippets (preview of top sources)
-        evidence_snippets = [c["text"][:300] + "..." for c in chunk_dicts[:3]]
+        # Enforce citation presence to prevent ungrounded responses.
+        if not citations:
+            logger.warning("No valid citations found in generated answer. Returning NOT_FOUND.")
+            return _not_found_response(
+                subject_name=subject_name,
+                confidence_score=confidence["score"],
+                chunk_dicts=chunk_dicts
+            )
+
+        # Provide evidence snippets from cited chunks first.
+        evidence_snippets = _build_evidence_snippets(chunk_dicts, citations=citations, limit=3)
         
         logger.info(f"Generated answer with {len(citations)} citations")
         
@@ -504,7 +555,7 @@ async def ask_question(
             "confidenceScore": confidence["score"],
             "citations": citations,
             "evidenceSnippets": evidence_snippets,
-            "topChunkIds": [c.get("chunkId") for c in chunk_dicts],
+            "topChunkIds": [c.get("chunkId") for c in chunk_dicts if c.get("chunkId")],
             "diagnostics": {
                 "queryKeywords": keywords,
                 "multiQueries": multi_queries,

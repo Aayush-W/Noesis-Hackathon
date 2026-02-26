@@ -35,6 +35,8 @@ async def ask(request: QARequest):
             "answer": result["answer"],
             "confidenceTier": result["confidenceTier"],
             "confidenceScore": result["confidenceScore"],
+            "citations": result.get("citations", []),
+            "evidenceSnippets": result.get("evidenceSnippets", []),
             "topChunkIds": result.get("topChunkIds", []),
             "createdAt": datetime.utcnow()
         }

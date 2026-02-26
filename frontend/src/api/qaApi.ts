@@ -2,99 +2,172 @@ import type { AnswerPayload, Citation } from "../types/document";
 import type { Subject } from "../types/subject";
 import apiClient from "./axios";
 
-const mockEvidence: Record<string, { answer: string; citations: Citation[] }> = {
+const mockEvidence: Record<string, { answer: string; citations: Citation[]; evidenceSnippets: string[] }> = {
   photosynthesis: {
     answer:
-      "Photosynthesis is the process where plants convert light energy into glucose using carbon dioxide and water.",
+      "Photosynthesis converts light energy into chemical energy in chloroplasts [SOURCE: Biology_Notes.pdf, Page 45].",
     citations: [
       {
-        documentName: "Biology_Notes.pdf",
-        location: "Page 45, Chapter 3",
+        fileName: "Biology_Notes.pdf",
+        locationRef: "Page 45",
+        chunkId: "chunk-photosynthesis-45",
         sourceFormat: "PDF"
       }
+    ],
+    evidenceSnippets: [
+      "[Biology_Notes.pdf | Page 45] Photosynthesis occurs in chloroplasts where light energy is transformed to glucose."
     ]
   },
   genetics: {
-    answer: "Mendelian inheritance explains dominant and recessive traits across generations.",
+    answer:
+      "Mendel's law of segregation states that allele pairs separate during gamete formation [SOURCE: Genetics_Lecture.pptx, Slide 12].",
     citations: [
       {
-        documentName: "Genetics_Lecture.pptx",
-        location: "Slide 12",
+        fileName: "Genetics_Lecture.pptx",
+        locationRef: "Slide 12",
+        chunkId: "chunk-genetics-12",
         sourceFormat: "PPTX"
       }
+    ],
+    evidenceSnippets: [
+      "[Genetics_Lecture.pptx | Slide 12] During meiosis, alleles separate so each gamete receives one allele."
     ]
   },
   equation: {
-    answer: "The balanced equation noted is CO2 + H2O + light -> C6H12O6 + O2.",
+    answer:
+      "The noted equation is CO2 + H2O + light -> C6H12O6 + O2 [SOURCE: Study_Table.xlsx, Sheet Reactions, Row B4:D7].",
     citations: [
       {
-        documentName: "Study_Table.xlsx",
-        location: "Sheet Reactions, Row B4:D7",
+        fileName: "Study_Table.xlsx",
+        locationRef: "Sheet Reactions, Row B4:D7",
+        chunkId: "chunk-equation-b4",
         sourceFormat: "XLSX"
       }
+    ],
+    evidenceSnippets: [
+      "[Study_Table.xlsx | Sheet Reactions, Row B4:D7] CO2 + H2O + light -> C6H12O6 + O2."
     ]
   }
 };
 
-const getConfidenceTier = (query: string) => {
-  if (query.length < 6) {
-    return "NOT_FOUND";
+const requestCandidates = (path: string) =>
+  path.startsWith("/api/v1") ? [path] : [path, `/api/v1${path}`];
+
+interface BackendSubject {
+  id: string;
+  name: string;
+}
+
+const tryPost = async <T,>(path: string, data: unknown): Promise<T> => {
+  let lastError: unknown;
+
+  for (const candidate of requestCandidates(path)) {
+    try {
+      const response = await apiClient.post<T>(candidate, data);
+      return response.data;
+    } catch (error) {
+      lastError = error;
+    }
   }
-  const match = Object.keys(mockEvidence).find((keyword) =>
-    query.toLowerCase().includes(keyword)
-  );
+
+  throw lastError;
+};
+
+const tryGet = async <T,>(path: string): Promise<T> => {
+  let lastError: unknown;
+
+  for (const candidate of requestCandidates(path)) {
+    try {
+      const response = await apiClient.get<T>(candidate);
+      return response.data;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+};
+
+const ensureBackendSubject = async (subject: Subject) => {
+  const subjects = await tryGet<BackendSubject[]>("/subjects");
+  const match =
+    subjects.find((item) => item.id === subject.id) ??
+    subjects.find((item) => item.name.trim().toLowerCase() === subject.name.trim().toLowerCase());
+
   if (match) {
-    return "HIGH";
+    return match.id;
   }
-  if (query.toLowerCase().includes("define") || query.toLowerCase().includes("explain")) {
-    return "MEDIUM";
+
+  const created = await tryPost<BackendSubject>("/subjects", { name: subject.name });
+  return created.id;
+};
+
+const strictNotFound = (subjectName: string): AnswerPayload => ({
+  answer: `Not found in your notes for ${subjectName}`,
+  confidenceTier: "NOT_FOUND",
+  confidenceScore: 0,
+  citations: [],
+  evidenceSnippets: []
+});
+
+const normalizeResponse = (payload: Partial<AnswerPayload>, subjectName: string): AnswerPayload => {
+  const answer = payload.answer?.trim() ?? "";
+  const confidenceTier = payload.confidenceTier ?? "NOT_FOUND";
+  const confidenceScore = Number(payload.confidenceScore ?? 0);
+  const citations = payload.citations ?? [];
+  const evidenceSnippets = payload.evidenceSnippets ?? [];
+
+  if (
+    confidenceTier === "NOT_FOUND" ||
+    answer.toLowerCase().startsWith("not found in your notes") ||
+    citations.length === 0
+  ) {
+    return {
+      ...strictNotFound(subjectName),
+      evidenceSnippets
+    };
   }
-  return "NOT_FOUND";
+
+  return {
+    answer,
+    confidenceTier,
+    confidenceScore,
+    citations,
+    evidenceSnippets,
+    topChunkIds: payload.topChunkIds ?? []
+  };
 };
 
 export const qaApi = {
   async askQuestion(question: string, subject: Subject): Promise<AnswerPayload> {
     if (import.meta.env.VITE_USE_REAL_API === "true") {
-      const response = await apiClient.post<AnswerPayload>("/qa/ask", {
-        question,
-        subjectId: subject.id
+      const subjectId = await ensureBackendSubject(subject);
+      const result = await tryPost<AnswerPayload>("/qa", {
+        query: question,
+        subjectId
       });
-      return response.data;
+      return normalizeResponse(result, subject.name);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 550));
-    const tier = getConfidenceTier(question);
-    const match = Object.entries(mockEvidence).find(([keyword]) =>
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    const matched = Object.entries(mockEvidence).find(([keyword]) =>
       question.toLowerCase().includes(keyword)
     );
 
-    if (tier === "NOT_FOUND") {
-      return {
-        answer: `Not found in your notes for ${subject.name}`,
-        confidence: "NOT_FOUND",
-        citations: []
-      };
+    if (!matched) {
+      return strictNotFound(subject.name);
     }
 
-    if (tier === "MEDIUM") {
-      return {
-        answer:
-          "I found partially related content in your notes. Please verify this against the cited section before using it.",
-        confidence: "MEDIUM",
-        citations: [
-          {
-            documentName: `${subject.name}_Revision.docx`,
-            location: "Section 2.3, Paragraph 4",
-            sourceFormat: "DOCX"
-          }
-        ]
-      };
-    }
-
-    return {
-      answer: match?.[1].answer ?? "No relevant context found.",
-      confidence: "HIGH",
-      citations: match?.[1].citations ?? []
-    };
+    return normalizeResponse(
+      {
+        answer: matched[1].answer,
+        confidenceTier: "HIGH",
+        confidenceScore: 0.94,
+        citations: matched[1].citations,
+        evidenceSnippets: matched[1].evidenceSnippets,
+        topChunkIds: matched[1].citations.map((citation) => citation.chunkId)
+      },
+      subject.name
+    );
   }
 };

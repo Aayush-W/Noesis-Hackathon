@@ -742,6 +742,21 @@ textarea {
   font-size: 12px;
 }
 
+.evidence-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.evidence-list small {
+  display: block;
+  border: 1px solid #d2ddff;
+  border-radius: 8px;
+  background: #f6f9ff;
+  color: #3f538f;
+  padding: 6px 7px;
+}
+
 .chat-input-row {
   margin-top: 10px;
   display: flex;
@@ -785,6 +800,44 @@ textarea {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 7px;
+}
+
+.evidence-panel {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.evidence-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.evidence-panel__meta,
+.evidence-panel__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.evidence-cards {
+  display: grid;
+  gap: 7px;
+}
+
+.evidence-card {
+  border: 1px solid #d4def9;
+  border-radius: 10px;
+  background: #f7faff;
+  padding: 8px;
+}
+
+.evidence-card p {
+  margin: 0;
+  color: #32497f;
+  font-size: 12px;
 }
 
 .heat-cell {

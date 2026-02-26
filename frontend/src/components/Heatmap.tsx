@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { useQA } from "../hooks/useQA";
+import { useSubject } from "../hooks/useSubject";
 import type { SourceFormat } from "../types/document";
 
 interface HeatCell {
@@ -9,12 +11,12 @@ interface HeatCell {
 }
 
 const mockCells: HeatCell[] = [
-  { id: "c1", label: "PDF • Page 43", format: "PDF", coverage: 88 },
-  { id: "c2", label: "PDF • Page 45", format: "PDF", coverage: 62 },
-  { id: "c3", label: "PPTX • Slide 12", format: "PPTX", coverage: 23 },
-  { id: "c4", label: "DOCX • Section 2.3", format: "DOCX", coverage: 47 },
-  { id: "c5", label: "XLSX • Sheet Reactions", format: "XLSX", coverage: 14 },
-  { id: "c6", label: "IMAGE • diagram_p3.jpg", format: "IMAGE", coverage: 6 }
+  { id: "c1", label: "PDF | Page 43", format: "PDF", coverage: 88 },
+  { id: "c2", label: "PDF | Page 45", format: "PDF", coverage: 62 },
+  { id: "c3", label: "PPTX | Slide 12", format: "PPTX", coverage: 23 },
+  { id: "c4", label: "DOCX | Section 2.3", format: "DOCX", coverage: 47 },
+  { id: "c5", label: "XLSX | Sheet Reactions", format: "XLSX", coverage: 14 },
+  { id: "c6", label: "IMAGE | diagram_p3.jpg", format: "IMAGE", coverage: 6 }
 ];
 
 const filters: Array<SourceFormat | "ALL"> = [
@@ -43,6 +45,9 @@ const cellClassForCoverage = (coverage: number) => {
 
 const Heatmap = () => {
   const [filter, setFilter] = useState<SourceFormat | "ALL">("ALL");
+  const { selectedSubject } = useSubject();
+  const { latestBySubject } = useQA();
+  const latestInsight = latestBySubject[selectedSubject.id];
 
   const cells = useMemo(() => {
     if (filter === "ALL") {
@@ -77,6 +82,33 @@ const Heatmap = () => {
             <p>{cell.coverage}% covered</p>
           </article>
         ))}
+      </div>
+
+      <div className="evidence-panel">
+        <h3>Top supporting evidence snippets</h3>
+        {latestInsight ? (
+          <>
+            <p className="evidence-panel__meta">
+              Last question: {latestInsight.question}
+              <br />
+              Confidence: {latestInsight.payload.confidenceTier} (
+              {(latestInsight.payload.confidenceScore * 100).toFixed(1)}%)
+            </p>
+            {latestInsight.payload.evidenceSnippets.length ? (
+              <div className="evidence-cards">
+                {latestInsight.payload.evidenceSnippets.slice(0, 3).map((snippet) => (
+                  <article key={`${latestInsight.createdAt}-${snippet.slice(0, 14)}`} className="evidence-card">
+                    <p>{snippet}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="evidence-panel__empty">No supporting snippets available for this response.</p>
+            )}
+          </>
+        ) : (
+          <p className="evidence-panel__empty">Ask a question in chat to populate supporting evidence snippets.</p>
+        )}
       </div>
     </section>
   );

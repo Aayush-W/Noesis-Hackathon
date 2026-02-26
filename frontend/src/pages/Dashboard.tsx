@@ -1,6 +1,8 @@
 import { ChevronDown, FileStack } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQA } from "../hooks/useQA";
+import { useSubject } from "../hooks/useSubject";
 
 const tabs = [
   "Flashcard sets",
@@ -13,8 +15,11 @@ const tabs = [
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { selectedSubject } = useSubject();
+  const { latestBySubject } = useQA();
   const [activeTab, setActiveTab] = useState(tabs[0]);
   const [sortByRecent, setSortByRecent] = useState(true);
+  const latestInsight = latestBySubject[selectedSubject.id];
 
   return (
     <section className="library-page">
@@ -45,6 +50,29 @@ const Dashboard = () => {
         <button type="button" onClick={() => navigate("/flashcards")}>
           Create a set
         </button>
+      </article>
+
+      <article className="panel evidence-panel">
+        <h3>Evidence dashboard</h3>
+        {latestInsight ? (
+          <>
+            <p className="evidence-panel__meta">
+              Subject: {selectedSubject.name}
+              <br />
+              Last confidence: {latestInsight.payload.confidenceTier} (
+              {(latestInsight.payload.confidenceScore * 100).toFixed(1)}%)
+            </p>
+            <div className="evidence-cards">
+              {latestInsight.payload.evidenceSnippets.slice(0, 3).map((snippet) => (
+                <article className="evidence-card" key={`${latestInsight.createdAt}-${snippet.slice(0, 14)}`}>
+                  <p>{snippet}</p>
+                </article>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="evidence-panel__empty">Ask a question in workspace chat to populate evidence snippets.</p>
+        )}
       </article>
     </section>
   );

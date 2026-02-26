@@ -12,6 +12,8 @@ import FlashcardsWorkspace from "./pages/FlashcardsWorkspace";
 import Home from "./pages/Home";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import SubjectPage from "./pages/SubjectPage";
+import InterlandHub from "./pages/InterlandHub";
+import RealityRiver from "./pages/RealityRiver";
 
 const MissionGame = lazy(() => import("./components/MissionGame"));
 
@@ -107,6 +109,8 @@ const App = () => {
                 />
               }
             />
+            <Route path="/interland" element={<InterlandHub />} />
+            <Route path="/interland/river" element={<RealityRiver />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
