@@ -1,75 +1,14 @@
 import { Brain, Flame, Gamepad2, ShieldCheck, Sparkles, Sword, Trophy, Zap } from "lucide-react";
-import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 interface HomeProps {
+  onLaunchMission: () => void;
   onOpenPracticeModal: () => void;
   onShowMessage: (message: string) => void;
 }
 
-type QuizMode = "test" | "general";
-
-interface QuizQuestion {
-  question: string;
-  options: string[];
-  answer: string;
-}
-
-const questions: Record<QuizMode, QuizQuestion[]> = {
-  test: [
-    {
-      question: "In a confidence-gated system, what should happen below threshold?",
-      options: ["Generate from memory", "Return Not Found", "Search internet", "Skip citation"],
-      answer: "Return Not Found"
-    },
-    {
-      question: "Which mode is best for exam-like pressure?",
-      options: ["Arcade quiz", "Mock test arena", "Casual chat", "Folder view"],
-      answer: "Mock test arena"
-    }
-  ],
-  general: [
-    {
-      question: "Best quick session for revision bursts?",
-      options: ["General quiz arena", "Full mock test", "Upload modal", "Heatmap tab"],
-      answer: "General quiz arena"
-    },
-    {
-      question: "What keeps engagement high in gamified UI?",
-      options: ["No feedback", "Static colors", "Progress + rewards", "Hidden controls"],
-      answer: "Progress + rewards"
-    }
-  ]
-};
-
-const Home = ({ onOpenPracticeModal, onShowMessage }: HomeProps) => {
+const Home = ({ onLaunchMission, onOpenPracticeModal, onShowMessage }: HomeProps) => {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<QuizMode>("test");
-  const [index, setIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [selected, setSelected] = useState<string | null>(null);
-
-  const currentQuestion = useMemo(() => questions[mode][index], [index, mode]);
-
-  const selectOption = (option: string) => {
-    if (selected) {
-      return;
-    }
-    setSelected(option);
-    const isCorrect = option === currentQuestion.answer;
-    if (isCorrect) {
-      setScore((current) => current + 10);
-      onShowMessage("Correct! +10 XP");
-    } else {
-      onShowMessage(`Incorrect. Correct answer: ${currentQuestion.answer}`);
-    }
-  };
-
-  const nextQuestion = () => {
-    const list = questions[mode];
-    setSelected(null);
-    setIndex((current) => (current + 1) % list.length);
-  };
 
   return (
     <div className="home-shell">
@@ -82,14 +21,17 @@ const Home = ({ onOpenPracticeModal, onShowMessage }: HomeProps) => {
             prep + general practice.
           </p>
           <div className="hero-actions">
-            <button type="button" onClick={onOpenPracticeModal}>
+            <button type="button" onClick={onLaunchMission}>
               <Sword size={18} />
               Launch Test Mission
             </button>
             <button
               type="button"
               className="button-ghost"
-              onClick={() => navigate("/flashcards")}
+              onClick={() => {
+                navigate("/flashcards");
+                onShowMessage("Open flashcard workspace for quick drills.");
+              }}
             >
               <Brain size={18} />
               Open Quiz Workspace
@@ -114,8 +56,8 @@ const Home = ({ onOpenPracticeModal, onShowMessage }: HomeProps) => {
         </article>
         <article>
           <Zap size={18} />
-          <strong>{score} XP</strong>
-          <span>From quick rounds</span>
+          <strong>Mission XP</strong>
+          <span>Earned from note-driven rounds</span>
         </article>
         <article>
           <Trophy size={18} />
@@ -136,7 +78,7 @@ const Home = ({ onOpenPracticeModal, onShowMessage }: HomeProps) => {
             <span>Ranked mode</span>
             <span>Exam scope</span>
           </div>
-          <button type="button" onClick={onOpenPracticeModal}>
+          <button type="button" onClick={onLaunchMission}>
             Start test arena
           </button>
         </article>
@@ -152,7 +94,7 @@ const Home = ({ onOpenPracticeModal, onShowMessage }: HomeProps) => {
             <span>Bonus XP</span>
             <span>Topic shuffle</span>
           </div>
-          <button type="button" onClick={() => navigate("/flashcards")}>
+          <button type="button" onClick={onLaunchMission}>
             Play quick quiz
           </button>
         </article>
@@ -160,69 +102,27 @@ const Home = ({ onOpenPracticeModal, onShowMessage }: HomeProps) => {
 
       <section className="quiz-play">
         <div className="quiz-play__header">
-          <h2>Quiz play</h2>
-          <div className="mode-switch">
-            <button
-              type="button"
-              className={mode === "test" ? "active" : ""}
-              onClick={() => {
-                setMode("test");
-                setIndex(0);
-                setSelected(null);
-              }}
-            >
-              Test mode
-            </button>
-            <button
-              type="button"
-              className={mode === "general" ? "active" : ""}
-              onClick={() => {
-                setMode("general");
-                setIndex(0);
-                setSelected(null);
-              }}
-            >
-              General quiz
-            </button>
-          </div>
+          <h2>Interland-style mission flow</h2>
+          <span className="pill">3D scene + note-derived questions</span>
         </div>
 
         <article className="question-card">
           <span className="question-chip">
             <Sparkles size={14} />
-            {mode === "test" ? "Mission challenge" : "Arcade challenge"}
+            Mission sequence
           </span>
-          <h3>{currentQuestion.question}</h3>
-          <div className="option-grid">
-            {currentQuestion.options.map((option) => {
-              const isChosen = selected === option;
-              const isAnswer = currentQuestion.answer === option;
-              const stateClass = selected
-                ? isAnswer
-                  ? "correct"
-                  : isChosen
-                    ? "wrong"
-                    : ""
-                : "";
-
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  className={`option-button ${stateClass}`}
-                  onClick={() => selectOption(option)}
-                >
-                  {option}
-                </button>
-              );
-            })}
+          <h3>Click Launch Test Mission to enter the 3D quiz map and generate rounds from uploaded notes.</h3>
+          <div className="tag-row">
+            <span>Upload or paste notes</span>
+            <span>Auto-generate MCQs</span>
+            <span>Progressive mission rounds</span>
           </div>
           <div className="question-footer">
-            <button type="button" onClick={nextQuestion}>
-              Next question
+            <button type="button" onClick={onLaunchMission}>
+              Launch test mission
             </button>
-            <button type="button" className="button-ghost" onClick={() => navigate("/subject/jee-main")}>
-              View exam dashboard
+            <button type="button" className="button-ghost" onClick={onOpenPracticeModal}>
+              Open classic generator
             </button>
           </div>
         </article>

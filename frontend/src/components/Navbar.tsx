@@ -8,7 +8,7 @@ interface NavbarProps {
   onSearchChange: (value: string) => void;
   onOpenPracticeModal: () => void;
   onOpenStudyGuidesModal: () => void;
-  onUpgradeClick: () => void;
+  onProfileClick: () => void;
 }
 
 const Navbar = ({
@@ -18,7 +18,7 @@ const Navbar = ({
   onSearchChange,
   onOpenPracticeModal,
   onOpenStudyGuidesModal,
-  onUpgradeClick
+  onProfileClick
 }: NavbarProps) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -69,11 +69,7 @@ const Navbar = ({
           ) : null}
         </div>
 
-        <button className="trial-button" type="button" onClick={onUpgradeClick}>
-          Upgrade: Free 7-day trial
-        </button>
-
-        <button className="profile-button" type="button">
+        <button className="profile-button" type="button" onClick={onProfileClick}>
           <img src={avatarUrl} alt="Profile avatar" />
           <ChevronDown size={15} />
         </button>

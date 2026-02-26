@@ -1,5 +1,5 @@
 import { BookText, Globe, Upload, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChangeEvent, useMemo, useRef, useState } from "react";
 
 type GuideTab = "paste" | "upload" | "drive";
 
@@ -12,8 +12,23 @@ interface StudyGuideModalProps {
 const StudyGuideModal = ({ open, onClose, onGenerated }: StudyGuideModalProps) => {
   const [tab, setTab] = useState<GuideTab>("paste");
   const [inputValue, setInputValue] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [driveConnected, setDriveConnected] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const canGenerate = useMemo(() => inputValue.trim().length > 30 || tab !== "paste", [inputValue, tab]);
+  const canGenerate = useMemo(() => {
+    if (tab === "paste") {
+      return inputValue.trim().length > 30;
+    }
+    if (tab === "upload") {
+      return selectedFiles.length > 0;
+    }
+    return driveConnected;
+  }, [driveConnected, inputValue, selectedFiles.length, tab]);
+
+  const onFilesSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    setSelectedFiles(Array.from(event.target.files ?? []));
+  };
 
   if (!open) {
     return null;
@@ -61,9 +76,26 @@ const StudyGuideModal = ({ open, onClose, onGenerated }: StudyGuideModalProps) =
             <div className="upload-card upload-card--small">
               <Upload size={48} />
               <h4>Drop files to build your study guide</h4>
-              <button type="button" onClick={() => setInputValue("uploaded file selected")}>
+              <button type="button" onClick={() => fileInputRef.current?.click()}>
                 Browse files
               </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.docx,.pptx,.txt,.png,.jpg,.jpeg"
+                onChange={onFilesSelected}
+                hidden
+              />
+              {selectedFiles.length ? (
+                <div className="file-chip-row">
+                  {selectedFiles.map((file) => (
+                    <span className="file-chip" key={file.name}>
+                      {file.name}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -71,8 +103,14 @@ const StudyGuideModal = ({ open, onClose, onGenerated }: StudyGuideModalProps) =
             <div className="upload-card upload-card--small">
               <Globe size={48} />
               <h4>Connect Google Drive to import source notes</h4>
-              <button type="button" onClick={() => setInputValue("drive connected")}>
-                Connect Drive
+              <button
+                type="button"
+                onClick={() => {
+                  setDriveConnected(true);
+                  onGenerated("Google Drive connected for study guide generation.");
+                }}
+              >
+                {driveConnected ? "Drive connected" : "Connect Drive"}
               </button>
             </div>
           ) : null}
@@ -95,9 +133,17 @@ const StudyGuideModal = ({ open, onClose, onGenerated }: StudyGuideModalProps) =
             type="button"
             disabled={!canGenerate}
             onClick={() => {
-              onGenerated("Study guide generated from provided material.");
+              const sourceMessage =
+                tab === "paste"
+                  ? "Study guide generated from pasted notes."
+                  : tab === "upload"
+                    ? "Study guide generated from uploaded files."
+                    : "Study guide generated from connected Google Drive notes.";
+              onGenerated(sourceMessage);
               onClose();
               setInputValue("");
+              setSelectedFiles([]);
+              setDriveConnected(false);
               setTab("paste");
             }}
           >

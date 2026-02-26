@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Suspense, lazy, useMemo, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
@@ -13,16 +13,19 @@ import Home from "./pages/Home";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import SubjectPage from "./pages/SubjectPage";
 
+const MissionGame = lazy(() => import("./components/MissionGame"));
+
 const App = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { addFolder, folders, setSelectedSubject } = useSubject();
+  const { addFolder, folders, selectedSubject, setSelectedSubject } = useSubject();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [practiceOpen, setPracticeOpen] = useState(false);
   const [studyGuideOpen, setStudyGuideOpen] = useState(false);
+  const [missionOpen, setMissionOpen] = useState(false);
   const [toast, setToast] = useState("");
 
   const searchPlaceholder = useMemo(() => {
@@ -68,14 +71,20 @@ const App = () => {
           onSearchChange={setSearchValue}
           onOpenPracticeModal={() => setPracticeOpen(true)}
           onOpenStudyGuidesModal={() => setStudyGuideOpen(true)}
-          onUpgradeClick={() => showToast("Trial flow triggered (frontend only).")}
+          onProfileClick={() => showToast("Profile menu will be connected with auth settings.")}
         />
 
         <div className="page-scroll">
           <Routes>
             <Route
               path="/"
-              element={<Home onOpenPracticeModal={() => setPracticeOpen(true)} onShowMessage={showToast} />}
+              element={
+                <Home
+                  onLaunchMission={() => setMissionOpen(true)}
+                  onOpenPracticeModal={() => setPracticeOpen(true)}
+                  onShowMessage={showToast}
+                />
+              }
             />
             <Route path="/library" element={<Dashboard />} />
             <Route path="/study-groups" element={<SubjectPage />} />
@@ -108,6 +117,14 @@ const App = () => {
         onClose={() => setPracticeOpen(false)}
         onGenerated={(message) => showToast(message)}
       />
+      <Suspense fallback={null}>
+        <MissionGame
+          open={missionOpen}
+          subject={selectedSubject}
+          onClose={() => setMissionOpen(false)}
+          onShowMessage={showToast}
+        />
+      </Suspense>
       <StudyGuideModal
         open={studyGuideOpen}
         onClose={() => setStudyGuideOpen(false)}

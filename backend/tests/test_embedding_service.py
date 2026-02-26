@@ -254,3 +254,21 @@ class TestEmbeddingConsistency:
             
             result = await embed_chunks(chunks)
             assert len(result) == 3
+            
+            e1 = result[0]["embedding"]
+            e2 = result[1]["embedding"]
+            e3 = result[2]["embedding"]
+            
+            def cos_sim(v1, v2):
+                dot = sum(a*b for a, b in zip(v1, v2))
+                mag1 = sum(a*a for a in v1)**0.5
+                mag2 = sum(b*b for b in v2)**0.5
+                return dot / (mag1 * mag2)
+            
+            # e1 and e2 should be similar
+            sim12 = cos_sim(e1, e2)
+            # e1 and e3 should be different
+            sim13 = cos_sim(e1, e3)
+            
+            assert sim12 >= 0.9
+            assert sim13 < 0.5

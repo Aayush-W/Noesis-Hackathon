@@ -1,4 +1,12 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+const languages = ["English (UK)", "English (US)", "Hindi"];
+
 const SubjectPage = () => {
+  const navigate = useNavigate();
+  const [languageIndex, setLanguageIndex] = useState(0);
+
   return (
     <section className="study-groups-page">
       <div className="study-groups-hero">
@@ -17,16 +25,29 @@ const SubjectPage = () => {
           <br />
           and study flashcards together
         </h1>
-        <button type="button">Create a group</button>
-        <a href="#learn">Learn more about study groups</a>
+        <button type="button" onClick={() => navigate("/flashcards")}>
+          Create a group
+        </button>
+        <a href="https://quizlet.com/features/study-groups" target="_blank" rel="noreferrer">
+          Learn more about study groups
+        </a>
       </div>
 
       <footer>
         <div>
-          <a href="#privacy">Privacy</a>
-          <a href="#terms">Terms</a>
+          <a href="https://www.google.com/policies/privacy/" target="_blank" rel="noreferrer">
+            Privacy
+          </a>
+          <a href="https://www.google.com/policies/terms/" target="_blank" rel="noreferrer">
+            Terms
+          </a>
         </div>
-        <button type="button">English (UK)</button>
+        <button
+          type="button"
+          onClick={() => setLanguageIndex((current) => (current + 1) % languages.length)}
+        >
+          {languages[languageIndex]}
+        </button>
       </footer>
     </section>
   );

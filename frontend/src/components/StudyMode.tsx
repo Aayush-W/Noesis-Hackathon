@@ -21,6 +21,8 @@ const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
   const [tab, setTab] = useState<PracticeSourceTab>("upload");
   const [pasteText, setPasteText] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [driveConnected, setDriveConnected] = useState(false);
+  const [flashcardsSelected, setFlashcardsSelected] = useState(false);
   const [generating, setGenerating] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -31,8 +33,11 @@ const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
     if (tab === "paste") {
       return pasteText.trim().length > 25;
     }
-    return true;
-  }, [pasteText, selectedFiles.length, tab]);
+    if (tab === "drive") {
+      return driveConnected;
+    }
+    return flashcardsSelected;
+  }, [driveConnected, flashcardsSelected, pasteText, selectedFiles.length, tab]);
 
   if (!open) {
     return null;
@@ -53,6 +58,8 @@ const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
       onClose();
       setPasteText("");
       setSelectedFiles([]);
+      setDriveConnected(false);
+      setFlashcardsSelected(false);
       setTab("upload");
     } finally {
       setGenerating(false);
@@ -67,14 +74,9 @@ const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
             <FileSpreadsheet size={25} />
             <h2>Generate practice tests</h2>
           </div>
-          <div className="overlay__actions">
-            <button className="trial-button" type="button">
-              Start free trial
-            </button>
-            <button className="ghost-icon" type="button" onClick={onClose} aria-label="Close modal">
-              <X size={26} />
-            </button>
-          </div>
+          <button className="ghost-icon" type="button" onClick={onClose} aria-label="Close modal">
+            <X size={26} />
+          </button>
         </header>
 
         <div className="overlay__body">
@@ -138,14 +140,30 @@ const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
             <div className="upload-card upload-card--small">
               <Globe size={48} />
               <h4>Connect Google Drive to import your notes.</h4>
-              <button type="button">Connect Drive</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDriveConnected(true);
+                  onGenerated("Google Drive connected (mock). You can now generate.");
+                }}
+              >
+                {driveConnected ? "Drive connected" : "Connect Drive"}
+              </button>
             </div>
           ) : null}
 
           {tab === "flashcards" ? (
             <div className="upload-card upload-card--small">
               <h4>Use existing flashcard sets as practice material.</h4>
-              <button type="button">Choose flashcard sets</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFlashcardsSelected(true);
+                  onGenerated("Flashcard set selected for practice generation.");
+                }}
+              >
+                {flashcardsSelected ? "Flashcard set selected" : "Choose flashcard sets"}
+              </button>
             </div>
           ) : null}
         </div>

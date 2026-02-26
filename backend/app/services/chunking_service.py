@@ -186,7 +186,9 @@ def merge_small_chunks(chunks: list[dict], min_size: int = MIN_CHUNK_SIZE) -> li
             # Merge with current or next
             if current_chunk:
                 current_chunk["text"] += "\n\n" + chunk["text"]
-                current_chunk["chunkLength"] += len(chunk["text"])
+                # Safely update chunkLength if it exists, otherwise it will be set by chunk_text later
+                if "chunkLength" in current_chunk:
+                    current_chunk["chunkLength"] = len(current_chunk["text"])
             else:
                 current_chunk = chunk.copy()
         else:
