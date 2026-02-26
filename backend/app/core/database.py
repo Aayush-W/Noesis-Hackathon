@@ -84,3 +84,7 @@ async def close_mongo_connection() -> None:
 def get_database() -> AsyncIOMotorDatabase:
     return db._get_database()
 
+
+def get_db() -> AsyncIOMotorDatabase:
+    """Compatibility helper used by route/service modules."""
+    return get_database()
