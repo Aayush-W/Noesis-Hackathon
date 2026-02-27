@@ -1,3 +1,12 @@
-
 __pycache__/
 *.pyc
+
+# Environment and Build Folders
+node_modules/
+.venv/
+venv/
+dist/
+.dist/
+chroma_db/
+logs/
+*.env
