@@ -1,4 +1,5 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 import re
 import logging
 import asyncio
@@ -9,16 +10,16 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
+_client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 NOT_FOUND_TEMPLATE = "Not found in your notes for {subject_name}"
 
 # Anti-Hallucination Configuration with refined thresholds
 CONFIDENCE_THRESHOLDS = {
-    "NOT_FOUND": 0.60,    # below this -> refuse to answer
-    "LOW": 0.75,          # 0.60-0.74 -> LOW
-    "MEDIUM": 0.90,       # 0.75-0.89 -> MEDIUM
-    "HIGH": 1.00          # >= 0.90   -> HIGH
+    "NOT_FOUND": 0.35,    # below this -> refuse to answer
+    "LOW": 0.55,          # 0.35-0.54 -> LOW
+    "MEDIUM": 0.75,       # 0.55-0.74 -> MEDIUM
+    "HIGH": 1.00          # >= 0.75   -> HIGH
 }
 
 GENERATION_CONFIG = {
@@ -52,18 +53,23 @@ RULES — you MUST follow ALL of them without exception:
    - HIGH: answer fully from sources
    - MEDIUM: answer but note uncertainty
    - LOW: answer fragments only and warn the student
+7. If the user asks a follow-up question (like 'simplify it' or 'give an example'),
+   use the Conversation History to understand context, but STILL ONLY use the provided SOURCES.
 
-SOURCES:
+{history_block}SOURCES:
 {sources_block}
 
 ---
 Student's Question: {query}
 """
 
-model = genai.GenerativeModel(
-    model_name="gemini-1.5-pro",
-    generation_config=GENERATION_CONFIG,
-    safety_settings=SAFETY_SETTINGS,
+FLASH_LITE_MODEL = "models/gemini-flash-lite-latest"
+_gen_config = genai_types.GenerateContentConfig(
+    temperature=GENERATION_CONFIG["temperature"],
+    top_p=GENERATION_CONFIG["top_p"],
+    top_k=GENERATION_CONFIG["top_k"],
+    max_output_tokens=GENERATION_CONFIG["max_output_tokens"],
+    candidate_count=GENERATION_CONFIG["candidate_count"],
     system_instruction="You are AskMyNotes — a strict, source-only study assistant.",
 )
 
@@ -74,7 +80,7 @@ class RAGError(Exception):
 async def _generate_multi_queries(query: str, subject_name: str) -> List[str]:
     """
     Generate alternative versions of the user query to improve retrieval recall.
-    Uses gemini-1.5-flash for speed.
+    Uses models/gemini-flash-lite-latest for speed.
     """
     prompt = f"""
     You are a study assistant for the subject "{subject_name}". 
@@ -84,14 +90,15 @@ async def _generate_multi_queries(query: str, subject_name: str) -> List[str]:
     Output ONLY the 3 questions, one per line, no numbering, no introductory text.
     """
     try:
-        flash_model = genai.GenerativeModel("gemini-1.5-flash")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
-            None, 
-            lambda: flash_model.generate_content(prompt)
+            None,
+            lambda: _client.models.generate_content(
+                model=FLASH_LITE_MODEL,
+                contents=prompt,
+            )
         )
         queries = [q.strip() for q in response.text.strip().split('\n') if q.strip()]
-        # Return unique set including original
         return list(dict.fromkeys([query] + queries[:3]))
     except Exception as e:
         logger.warning(f"Multi-query generation failed: {str(e)}")
@@ -100,7 +107,7 @@ async def _generate_multi_queries(query: str, subject_name: str) -> List[str]:
 async def _rerank_chunks(query: str, chunks: List[dict]) -> List[dict]:
     """
     Re-rank retrieved chunks using LLM scoring to improve precision.
-    Uses gemini-1.5-flash for efficiency.
+    Uses models/gemini-flash-lite-latest for efficiency.
     """
     if not chunks:
         return []
@@ -129,11 +136,13 @@ async def _rerank_chunks(query: str, chunks: List[dict]) -> List[dict]:
     """
     
     try:
-        flash_model = genai.GenerativeModel("gemini-1.5-flash")
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: flash_model.generate_content(prompt)
+            lambda: _client.models.generate_content(
+                model=FLASH_LITE_MODEL,
+                contents=prompt,
+            )
         )
         
         # Parse IDs (simple regex to find numbers)
@@ -235,9 +244,9 @@ def compute_confidence(
         keyword_bonus = min(0.05, (keyword_matches / len(chunk_texts)) * 0.10)
     
     # Weighted confidence calculation:
-    # - 70% max similarity (primary retrieval relevance)
+    # - 75% max similarity (primary retrieval relevance)
     # - 25% average similarity (consistency across results)
-    # - 20% variance penalty (demote unstable retrieval)
+    # - 15% variance penalty (demote unstable retrieval)
     # - up to +5% keyword matching bonus
     
     weighted = (
@@ -417,7 +426,7 @@ async def ask_question(
     # 4. Deduplicate results
     # 5. Gate through Confidence Score limits
     # 6. Compile contextual sources
-    # 7. Prompt Gemini-1.5-Pro
+    # 7. Prompt models/gemini-flash-lite-latest
     # 8. Extract & validate citations
     # 9. Formulate response payload
     
@@ -455,11 +464,24 @@ async def ask_question(
                     raise RAGError(f"Failed to embed query: {str(e)}")
                 if collection is None:
                     collection = chroma_client.get_collection(subject_id)
-                results = collection.query(
-                    query_embeddings=[q_embedding],
-                    n_results=min(5, 8), # get slightly more to allow for re-ranking
-                    include=["documents", "metadatas", "distances"]
-                )
+
+                # Build userId filter — prevents other users' chunks from polluting results
+                where_filter = {"userId": {"$eq": user_id}}
+
+                try:
+                    results = collection.query(
+                        query_embeddings=[q_embedding],
+                        n_results=8,
+                        include=["documents", "metadatas", "distances"],
+                        where=where_filter,
+                    )
+                except Exception:
+                    # Fallback: query without filter (no user-specific docs yet)
+                    results = collection.query(
+                        query_embeddings=[q_embedding],
+                        n_results=8,
+                        include=["documents", "metadatas", "distances"],
+                    )
                 logger.debug(f"Retrieved {len(results['documents'][0]) if results['documents'] else 0} results for query: {q}")
                 
                 if results["documents"] and len(results["documents"][0]) > 0:
@@ -516,34 +538,33 @@ async def ask_question(
                 chunk_dicts=chunk_dicts
             )
         
-        # Step 6: Build grounded prompt
+        # Step 6: Build grounded prompt using the SYSTEM_PROMPT template
         sources_block = build_sources_block(chunk_dicts)
         
         # Format chat history
         history_block = ""
         if history:
             history_lines = ["Conversation History:"]
-            for turn in history[-5:]: # Keep last 5 turns to avoid token limit explosion
+            for turn in history[-5:]:  # Keep last 5 turns to avoid token limit explosion
                 role = "User" if turn.get("role") == "user" else "Teacher"
                 history_lines.append(f"{role}: {turn.get('content')}")
-            history_lines.append("") # Add blank line before current question
-            history_block = "\n".join(history_lines)
+            history_lines.append("")  # Add blank line before current question
+            history_block = "\n".join(history_lines) + "\n\n"
 
-        prompt = (
-            f"You are a helpful study assistant answering questions strictly based on the provided notes for {subject_name}.\n"
-            f"You must answer ONLY using the information in the SOURCES below. Do not use outside knowledge.\n"
-            f"If the answer is not in the sources, reply exactly with: 'Not found in your notes for {subject_name}'\n"
-            f"You must cite your sources in line using the format [SOURCE: FileName, locationRef].\n"
-            f"If the user asks a follow-up question (like 'simplify it' or 'give an example'), use the Conversation History to understand what 'it' refers to, but STILL ONLY use the provided SOURCES to answer.\n\n"
-            f"{history_block}"
-            f"SOURCES:\n{sources_block}\n\n"
-            f"QUESTION: {query}\n"
-            f"ANSWER:"
+        prompt = SYSTEM_PROMPT.format(
+            subject_name=subject_name,
+            confidence_tier=confidence["tier"],
+            history_block=history_block,
+            sources_block=sources_block,
+            query=query,
         )
         
-        # Step 7: Generate response
+        # Step 7: Generate response (non-blocking)
         try:
-            response = model.generate_content(prompt)
+            loop = asyncio.get_running_loop()
+            response = await loop.run_in_executor(
+                None, lambda: model.generate_content(prompt)
+            )
             answer_text = (response.text or "").strip()
         except Exception as e:
             logger.error(f"Generation failed: {str(e)}")
@@ -594,3 +615,5 @@ async def ask_question(
     except Exception as e:
         logger.error(f"Unexpected error in RAG pipeline: {str(e)}")
         raise RAGError(f"RAG pipeline error: {str(e)}")
+
+

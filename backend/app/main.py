@@ -1,16 +1,23 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
-from app.core.database import close_mongo_connection, connect_to_mongo
+from app.core.database import close_mongo_connection, connect_to_mongo, get_db
 from app.routes import auth_routes, coverage_routes, qa_routes, study_routes, subject_routes, upload_routes
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await connect_to_mongo()
+    try:
+        await connect_to_mongo()
+    except Exception as e:
+        logger.warning("MongoDB connection failed during startup: %s. Server will start without database.", e)
     try:
         yield
     finally:
@@ -49,3 +56,28 @@ async def root() -> dict:
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def health_ready() -> JSONResponse:
+    checks = {
+        "mongodb": False,
+        "geminiApiKeyConfigured": bool(settings.GEMINI_API_KEY.strip()),
+    }
+
+    try:
+        db = get_db()
+        await db.command("ping")
+        checks["mongodb"] = True
+    except Exception:
+        checks["mongodb"] = False
+
+    ready = all(checks.values())
+    status_code = 200 if ready else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ready" if ready else "degraded",
+            "checks": checks,
+        },
+    )

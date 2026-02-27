@@ -1,0 +1,203 @@
+DISCRETE MATHEMATICS — STUDY NOTES
+====================================
+
+CHAPTER 1: GRAPH THEORY
+========================
+
+1.1 Basic Definitions
+---------------------
+A graph G = (V, E) consists of a set of vertices V and a set of edges E, where each edge connects two vertices.
+
+- Simple Graph: A graph with no loops (edges from a vertex to itself) and no multiple edges between the same pair of vertices.
+- Directed Graph (Digraph): A graph where edges have direction, represented as ordered pairs (u, v).
+- Undirected Graph: A graph where edges have no direction; edge {u, v} = {v, u}.
+- Weighted Graph: A graph where each edge has an associated numerical value (weight).
+
+1.2 Regular Graphs
+------------------
+A regular graph is a graph where every vertex has the same degree (number of edges incident to it).
+- A k-regular graph is one where every vertex has degree k.
+- Example: A cycle graph C_n is 2-regular (every vertex has degree 2).
+- Example: A complete graph K_n is (n-1)-regular.
+- Example: The Petersen graph is 3-regular (cubic graph).
+
+Theorem: In any graph, the sum of all vertex degrees equals 2|E| (Handshaking Lemma).
+Corollary: The number of vertices with odd degree is always even.
+
+1.3 Types of Graphs
+-------------------
+- Complete Graph K_n: Every pair of distinct vertices is connected by exactly one edge. Has n(n-1)/2 edges.
+- Bipartite Graph: Vertices can be partitioned into two disjoint sets U and V such that every edge connects a vertex in U to a vertex in V.
+- Complete Bipartite Graph K_{m,n}: Every vertex in U is connected to every vertex in V. Has m*n edges.
+- Planar Graph: A graph that can be drawn in a plane without edge crossings.
+- Tree: A connected acyclic graph. A tree with n vertices has exactly n-1 edges.
+
+1.4 Euler Paths and Circuits
+-----------------------------
+An Euler path is a path that visits every edge exactly once.
+An Euler circuit is an Euler path that starts and ends at the same vertex.
+
+Theorem (Euler, 1736):
+- An undirected graph has an Euler circuit if and only if it is connected and every vertex has even degree.
+- An undirected graph has an Euler path (not circuit) if and only if it has exactly two vertices of odd degree.
+
+Example: The Königsberg Bridge Problem — the city graph had all four vertices with odd degree, so no Euler path exists.
+
+1.5 Hamiltonian Paths and Circuits
+------------------------------------
+A Hamiltonian path visits every vertex exactly once.
+A Hamiltonian circuit visits every vertex exactly once and returns to the starting vertex.
+
+Unlike Euler circuits, there is no simple necessary and sufficient condition for Hamiltonian circuits.
+
+Dirac's Theorem: If G is a simple graph with n ≥ 3 vertices and every vertex has degree ≥ n/2, then G has a Hamiltonian circuit.
+Ore's Theorem: If for every pair of non-adjacent vertices u, v: deg(u) + deg(v) ≥ n, then G has a Hamiltonian circuit.
+
+1.6 Graph Coloring
+------------------
+A graph coloring assigns colors to vertices so that no two adjacent vertices share the same color.
+The chromatic number χ(G) is the minimum number of colors needed.
+
+Four Color Theorem: Every planar graph can be colored with at most 4 colors.
+- χ(K_n) = n (complete graph needs n colors)
+- χ(bipartite graph) = 2 (if it has at least one edge)
+- χ(cycle C_n) = 2 if n is even, 3 if n is odd
+
+1.7 Spanning Trees
+------------------
+A spanning tree of a connected graph G is a subgraph that is a tree and includes all vertices of G.
+A graph G with n vertices has a spanning tree if and only if G is connected.
+
+Minimum Spanning Tree (MST): A spanning tree with minimum total edge weight.
+- Kruskal's Algorithm: Sort edges by weight, add edge if it doesn't create a cycle (greedy, O(E log E)).
+- Prim's Algorithm: Start from any vertex, repeatedly add the minimum weight edge connecting the tree to a new vertex (O(E log V) with priority queue).
+
+Cayley's Formula: The number of labeled spanning trees of K_n is n^(n-2).
+
+
+CHAPTER 2: SET THEORY
+======================
+
+2.1 Basic Set Operations
+------------------------
+- Union: A ∪ B = {x | x ∈ A or x ∈ B}
+- Intersection: A ∩ B = {x | x ∈ A and x ∈ B}
+- Difference: A - B = {x | x ∈ A and x ∉ B}
+- Complement: Ā = {x | x ∉ A}
+- Symmetric Difference: A ⊕ B = (A - B) ∪ (B - A)
+
+De Morgan's Laws:
+- (A ∪ B)' = A' ∩ B'
+- (A ∩ B)' = A' ∪ B'
+
+2.2 Cardinality
+---------------
+For finite sets: |A ∪ B| = |A| + |B| - |A ∩ B| (Inclusion-Exclusion Principle)
+For three sets: |A ∪ B ∪ C| = |A| + |B| + |C| - |A ∩ B| - |A ∩ C| - |B ∩ C| + |A ∩ B ∩ C|
+
+Power Set: P(A) is the set of all subsets of A. If |A| = n, then |P(A)| = 2^n.
+
+2.3 Relations
+-------------
+A relation R from set A to set B is a subset of A × B.
+Properties of relations on a set A:
+- Reflexive: (a, a) ∈ R for all a ∈ A
+- Symmetric: if (a, b) ∈ R then (b, a) ∈ R
+- Antisymmetric: if (a, b) ∈ R and (b, a) ∈ R then a = b
+- Transitive: if (a, b) ∈ R and (b, c) ∈ R then (a, c) ∈ R
+
+An equivalence relation is reflexive, symmetric, and transitive.
+A partial order is reflexive, antisymmetric, and transitive.
+
+
+CHAPTER 3: COMBINATORICS
+=========================
+
+3.1 Permutations and Combinations
+----------------------------------
+Permutation P(n, r) = n! / (n-r)! — ordered selection of r items from n
+Combination C(n, r) = n! / (r! * (n-r)!) — unordered selection of r items from n
+
+Pascal's Identity: C(n, r) = C(n-1, r-1) + C(n-1, r)
+Binomial Theorem: (x + y)^n = Σ C(n, k) * x^(n-k) * y^k for k = 0 to n
+
+3.2 Pigeonhole Principle
+------------------------
+If n+1 or more objects are placed in n boxes, at least one box contains two or more objects.
+
+Generalized: If N objects are placed in k boxes, at least one box contains ⌈N/k⌉ objects.
+
+Example: In any group of 13 people, at least two share the same birth month.
+
+3.3 Recurrence Relations
+------------------------
+A recurrence relation defines a sequence where each term is a function of previous terms.
+
+Fibonacci Sequence: F(n) = F(n-1) + F(n-2), F(0) = 0, F(1) = 1
+Solving linear recurrence relations using characteristic equations:
+- Homogeneous: a_n = c_1 * a_{n-1} + c_2 * a_{n-2}
+- Characteristic equation: r^2 = c_1 * r + c_2
+- If roots r_1 ≠ r_2: a_n = α * r_1^n + β * r_2^n
+- If roots r_1 = r_2 = r: a_n = (α + β*n) * r^n
+
+
+CHAPTER 4: LOGIC AND PROOFS
+============================
+
+4.1 Propositional Logic
+-----------------------
+Logical connectives:
+- Conjunction (AND): p ∧ q
+- Disjunction (OR): p ∨ q
+- Negation (NOT): ¬p
+- Implication: p → q (false only when p is true and q is false)
+- Biconditional: p ↔ q (true when p and q have the same truth value)
+
+Tautology: A proposition that is always true.
+Contradiction: A proposition that is always false.
+Contingency: A proposition that is neither a tautology nor a contradiction.
+
+4.2 Proof Techniques
+--------------------
+- Direct Proof: Assume p, derive q using logic (to prove p → q).
+- Proof by Contrapositive: Prove ¬q → ¬p (equivalent to p → q).
+- Proof by Contradiction: Assume ¬p, derive a contradiction.
+- Mathematical Induction: Prove base case, then inductive step.
+
+Mathematical Induction Steps:
+1. Base case: Prove P(1) is true.
+2. Inductive hypothesis: Assume P(k) is true.
+3. Inductive step: Prove P(k+1) is true using the hypothesis.
+4. Conclusion: P(n) is true for all n ≥ 1.
+
+
+CHAPTER 5: NUMBER THEORY
+=========================
+
+5.1 Divisibility
+----------------
+a divides b (written a | b) if there exists integer k such that b = a * k.
+Properties:
+- If a | b and a | c, then a | (b + c)
+- If a | b, then a | bc for any integer c
+- If a | b and b | c, then a | c (transitivity)
+
+5.2 GCD and LCM
+---------------
+GCD(a, b): Greatest Common Divisor — largest integer dividing both a and b.
+LCM(a, b): Least Common Multiple — smallest positive integer divisible by both a and b.
+
+Relation: GCD(a, b) * LCM(a, b) = a * b
+
+Euclidean Algorithm for GCD:
+GCD(a, b) = GCD(b, a mod b), with base case GCD(a, 0) = a.
+
+5.3 Modular Arithmetic
+-----------------------
+a ≡ b (mod m) means m | (a - b).
+Properties:
+- (a + b) mod m = ((a mod m) + (b mod m)) mod m
+- (a * b) mod m = ((a mod m) * (b mod m)) mod m
+
+Fermat's Little Theorem: If p is prime and gcd(a, p) = 1, then a^(p-1) ≡ 1 (mod p).
+Chinese Remainder Theorem: If m_1, m_2, ..., m_k are pairwise coprime, the system of congruences x ≡ a_i (mod m_i) has a unique solution mod (m_1 * m_2 * ... * m_k).

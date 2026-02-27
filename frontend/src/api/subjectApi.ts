@@ -11,8 +11,4 @@ export const subjectApi = {
     const response = await apiClient.post<Subject>("/subjects", { name });
     return response.data;
   },
-
-  async deleteSubject(id: string): Promise<void> {
-    await apiClient.delete(`/subjects/${id}`);
-  },
 };

@@ -15,3 +15,7 @@ Pillow
 motor
 easyocr
 numpy
+certifi
+dnspython
+httpx
+beautifulsoup4

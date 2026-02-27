@@ -1,121 +1,38 @@
-import { Suspense, lazy, useMemo, useState } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import Navbar from "./components/Navbar";
-import Sidebar from "./components/Sidebar";
-import StudyMode from "./components/StudyMode";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
-import { useSubject } from "./hooks/useSubject";
-import Dashboard from "./pages/Dashboard";
-import FlashcardsWorkspace from "./pages/FlashcardsWorkspace";
-import Home from "./pages/Home";
-import PlaceholderPage from "./pages/PlaceholderPage";
-
-const MissionGame = lazy(() => import("./components/MissionGame"));
+import LoginPage from "./pages/LoginPage";
+import SubjectDossier from "./pages/SubjectDossier";
+import SubjectWorkspace from "./pages/SubjectWorkspace";
+import { useState } from "react";
 
 const App = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { user } = useAuth();
-  const { selectedSubject, selectedSubjectId, setSelectedSubject, subjects } = useSubject();
-
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [searchValue, setSearchValue] = useState("");
-  const [practiceOpen, setPracticeOpen] = useState(false);
-  const [missionOpen, setMissionOpen] = useState(false);
+  const { isAuthenticated } = useAuth();
   const [toast, setToast] = useState("");
 
-  const searchPlaceholder = useMemo(() => {
-    if (location.pathname === "/library") {
-      return "Search evidence, snippets, citations";
-    }
-    if (location.pathname === "/flashcards") {
-      return "Ask subject-scoped questions from your notes";
-    }
-    return "Search in AskMyNotes";
-  }, [location.pathname]);
-
-  const showToast = (message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 2400);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(""), 2800);
   };
 
+  // Not logged in → show login page
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    );
+  }
+
+  // Logged in → main app
   return (
-    <div className="app-root">
-      <Sidebar
-        activePath={location.pathname}
-        subjects={subjects}
-        selectedSubjectId={selectedSubjectId}
-        collapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed((current) => !current)}
-        onNavigate={navigate}
-        onSelectSubject={(subjectId) => {
-          setSelectedSubject(subjectId);
-          showToast(`Active subject set to ${subjects.find((subject) => subject.id === subjectId)?.name ?? ""}.`);
-        }}
-      />
-
-      <main className="content-shell">
-        <Navbar
-          searchValue={searchValue}
-          searchPlaceholder={searchPlaceholder}
-          avatarUrl={user?.avatarUrl}
-          onSearchChange={setSearchValue}
-          onOpenPracticeModal={() => setPracticeOpen(true)}
-          onProfileClick={() => showToast("Profile menu can be connected to auth settings.")}
-        />
-
-        <div className="page-scroll">
-          <Routes>
-            <Route
-              path="/"
-              element={
-                <Home
-                  onLaunchMission={() => setMissionOpen(true)}
-                  onOpenPracticeModal={() => setPracticeOpen(true)}
-                  onShowMessage={showToast}
-                />
-              }
-            />
-            <Route path="/library" element={<Dashboard />} />
-            <Route
-              path="/flashcards"
-              element={
-                <FlashcardsWorkspace
-                  onOpenPracticeModal={() => setPracticeOpen(true)}
-                />
-              }
-            />
-            <Route
-              path="/notifications"
-              element={
-                <PlaceholderPage
-                  title="Notifications"
-                  description="You're all caught up. Alerts will appear when new note-derived missions are ready."
-                />
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </div>
-      </main>
-
-      <StudyMode
-        open={practiceOpen}
-        onClose={() => setPracticeOpen(false)}
-        onGenerated={(message) => showToast(message)}
-      />
-
-      <Suspense fallback={null}>
-        <MissionGame
-          open={missionOpen}
-          subject={selectedSubject}
-          onClose={() => setMissionOpen(false)}
-          onShowMessage={showToast}
-        />
-      </Suspense>
-
-      {toast ? <div className="toast">{toast}</div> : null}
-    </div>
+    <>
+      <Routes>
+        <Route path="/" element={<SubjectDossier />} />
+        <Route path="/subject/:id" element={<SubjectWorkspace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      {toast && <div className="toast">{toast}</div>}
+    </>
   );
 };
 

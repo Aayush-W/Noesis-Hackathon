@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 CHUNK_SIZE = 500        # tokens (~375 words)
 CHUNK_OVERLAP = 50      # helps maintain context continuity
 SEPARATORS = ["\n\n", "\n", ".", "!", "?", ",", " "]
-MIN_CHUNK_SIZE = 50     # Minimum viable chunk size
+MIN_CHUNK_SIZE = 10     # Minimum viable chunk size
 MAX_CHUNK_SIZE = 1500   # Maximum chunk size to prevent overly large chunks
 
 class ChunkingError(Exception):
@@ -47,8 +47,20 @@ def chunk_text(text: str, metadata: dict) -> list[dict]:
     text = _preprocess_text(text)
     
     if len(text.strip()) < MIN_CHUNK_SIZE:
-        logger.warning(f"Text too short ({len(text)} chars) for {metadata['fileName']}")
-        raise ChunkingError(f"Text is too short to chunk: {len(text)} characters")
+        logger.warning(f"Text too short ({len(text)} chars), returning single chunk for {metadata['fileName']}")
+        chunk_id = str(uuid.uuid4())
+        return [{
+            "chunkId": chunk_id,
+            "text": text.strip(),
+            "subjectId": metadata.get("subjectId"),
+            "documentId": metadata.get("documentId"),
+            "fileName": metadata.get("fileName", "Unknown"),
+            "sourceFormat": metadata.get("sourceFormat", "unknown"),
+            "locationRef": "Section 1",
+            "chunkIndex": 0,
+            "chunkLength": len(text),
+            "wordCount": len(text.split()),
+        }]
     
     logger.info(f"Chunking {metadata['fileName']}: {len(text)} chars")
     

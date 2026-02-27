@@ -5,9 +5,10 @@ export type SourceFormat =
   | "XLSX"
   | "TXT"
   | "IMAGE"
-  | "GDOC";
+  | "GDOC"
+  | "URL";
 
-export type ConfidenceTier = "HIGH" | "MEDIUM" | "NOT_FOUND";
+export type ConfidenceTier = "HIGH" | "MEDIUM" | "LOW" | "NOT_FOUND";
 
 export interface Citation {
   fileName: string;

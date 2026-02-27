@@ -1,4 +1,5 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 from app.core.config import settings
 import asyncio
 import math
@@ -6,10 +7,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
+_client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-EMBEDDING_MODEL = "models/text-embedding-004"
+# Only model available in google.genai SDK (v1beta API)
+EMBEDDING_MODELS = ["models/gemini-embedding-001"]
 EMBEDDING_DIM = 768
+_active_embedding_dim = EMBEDDING_DIM
 TASK_TYPE_DOC = "RETRIEVAL_DOCUMENT"
 TASK_TYPE_QUERY = "RETRIEVAL_QUERY"
 MAX_RETRIES = 3
@@ -85,6 +88,9 @@ async def embed_chunks(chunks: list[dict], batch_size: int = 50) -> list[dict]:
                 embeddings.append(_stabilize_fallback_embedding(single[0]))
         
         for chunk, embedding in zip(batch_chunks, embeddings):
+            if not validate_embedding(embedding):
+                logger.warning(f"Invalid embedding detected for chunk {chunk.get('chunkId', 'unknown')}")
+                raise EmbeddingError(f"Invalid embedding for chunk {chunk.get('chunkId', 'unknown')}")
             chunk["embedding"] = embedding
             embedded_chunks.append(chunk)
             
@@ -126,33 +132,67 @@ async def _embed_with_retry(texts: list[str], task_type: str) -> list[list[float
     Raises:
         EmbeddingError: If all retries fail
     """
-    for attempt in range(MAX_RETRIES):
-        try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: genai.embed_content(
-                    model=EMBEDDING_MODEL,
-                    content=texts,
-                    task_type=task_type,
+    last_error: Exception | None = None
+
+    for model_name in EMBEDDING_MODELS:
+        for attempt in range(MAX_RETRIES):
+            try:
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda m=model_name: _client.models.embed_content(
+                        model=m,
+                        contents=texts,
+                        config=genai_types.EmbedContentConfig(task_type=task_type),
+                    )
                 )
-            )
-            return result["embedding"]
-            
-        except Exception as e:
-            logger.warning(f"Embedding attempt {attempt + 1}/{MAX_RETRIES} failed: {str(e)}")
-            
-            if attempt < MAX_RETRIES - 1:
-                wait_time = RETRY_DELAY * (2 ** attempt)  # Exponential backoff
-                await asyncio.sleep(wait_time)
-            else:
-                logger.error(f"Embedding failed after {MAX_RETRIES} retries")
-                raise EmbeddingError(f"Failed to embed texts: {str(e)}")
+                embeddings = result.embeddings  # list of ContentEmbedding objects
+                vecs = [list(e.values) for e in embeddings]
+                _sync_embedding_dim(vecs)
+                return vecs
+
+            except Exception as e:
+                last_error = e
+                error_text = str(e)
+                logger.warning(
+                    "Embedding attempt %d/%d failed for %s: %s",
+                    attempt + 1,
+                    MAX_RETRIES,
+                    model_name,
+                    error_text,
+                )
+
+                # If model is not available for this API key/version, fail over quickly.
+                if "not found" in error_text.lower() or "404" in error_text:
+                    break
+
+                if attempt < MAX_RETRIES - 1:
+                    wait_time = RETRY_DELAY * (2 ** attempt)
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error("Embedding failed after %d retries for model %s", MAX_RETRIES, model_name)
+
+    raise EmbeddingError(f"Failed to embed texts: {last_error}")
 
 def validate_embedding(embedding: list[float]) -> bool:
     """Validate embedding vector quality."""
-    if not embedding or len(embedding) != EMBEDDING_DIM:
+    if not embedding:
         return False
+
+    expected_dim = _active_embedding_dim if _active_embedding_dim > 0 else EMBEDDING_DIM
+    if len(embedding) != expected_dim:
+        return False
+
     # Check for NaN or Inf values
     import math
     return all(not math.isnan(x) and not math.isinf(x) for x in embedding)
+
+
+def _sync_embedding_dim(embeddings: list[list[float]]) -> None:
+    global _active_embedding_dim
+    if not embeddings or not embeddings[0]:
+        return
+    new_dim = len(embeddings[0])
+    if _active_embedding_dim != new_dim:
+        logger.info("Embedding dimension updated from %d to %d", _active_embedding_dim, new_dim)
+        _active_embedding_dim = new_dim

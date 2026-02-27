@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pymongo import ASCENDING, IndexModel
 
@@ -56,14 +57,44 @@ async def _create_indexes(database: AsyncIOMotorDatabase) -> None:
 
 async def connect_to_mongo() -> AsyncIOMotorDatabase:
     global mongo_client
+    import logging
+
+    logger = logging.getLogger(__name__)
 
     if mongo_client is None:
-        mongo_client = AsyncIOMotorClient(
-            settings.MONGODB_URL,
-            serverSelectionTimeoutMS=5000,
-            uuidRepresentation="standard",
-        )
-        await mongo_client.admin.command("ping")
+        # Try primary connection (Atlas or configured URL)
+        try:
+            mongo_kwargs = {
+                "serverSelectionTimeoutMS": 5000,
+                "uuidRepresentation": "standard",
+            }
+            # Use explicit CA chain for Atlas/TLS connections only.
+            if settings.MONGODB_URL.startswith("mongodb+srv://") or "mongodb.net" in settings.MONGODB_URL:
+                mongo_kwargs["tlsCAFile"] = certifi.where()
+
+            mongo_client = AsyncIOMotorClient(
+                settings.MONGODB_URL,
+                **mongo_kwargs,
+            )
+            await mongo_client.admin.command("ping")
+            logger.info("Connected to MongoDB: %s", settings.MONGODB_URL[:40] + "...")
+        except Exception as primary_err:
+            logger.warning("Primary MongoDB connection failed: %s", primary_err)
+
+            # Fallback to local MongoDB
+            fallback_url = "mongodb://localhost:27017"
+            try:
+                mongo_client = AsyncIOMotorClient(
+                    fallback_url,
+                    serverSelectionTimeoutMS=3000,
+                    uuidRepresentation="standard",
+                )
+                await mongo_client.admin.command("ping")
+                logger.info("Connected to fallback MongoDB at %s", fallback_url)
+            except Exception as fallback_err:
+                logger.error("Fallback MongoDB also failed: %s", fallback_err)
+                raise primary_err  # raise original error
+
         database = mongo_client[settings.DATABASE_NAME]
         db.set_database(database)
         await _create_indexes(database)

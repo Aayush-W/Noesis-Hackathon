@@ -1,8 +1,6 @@
 import { Mic, MicOff, SendHorizonal, Volume2, VolumeX } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { qaApi, type ChatTurn } from "../api/qaApi";
-import { useQA } from "../hooks/useQA";
-import { useSubject } from "../hooks/useSubject";
 import type { AnswerPayload } from "../types/document";
 
 interface ChatMessage {
@@ -12,232 +10,186 @@ interface ChatMessage {
   payload?: AnswerPayload;
 }
 
-interface SpeechRecognitionLike {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: any) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
+interface ChatInterfaceProps {
+  subjectId: string;
+  subjectName: string;
+  onQuestionAsked?: () => void;
+  onAnswer?: (payload: AnswerPayload) => void;
 }
 
-const initialAssistantMessage = (subjectName: string): ChatMessage => ({
-  id: "assistant-seed",
-  role: "assistant",
-  text: `Ask any question from ${subjectName}. Answers are scoped only to your uploaded notes.`
-});
-
-const ChatInterface = () => {
-  const { selectedSubject } = useSubject();
-  const { setLatestInsight } = useQA();
+const ChatInterface = ({ subjectId, subjectName, onQuestionAsked, onAnswer }: ChatInterfaceProps) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "seed",
+      role: "assistant",
+      text: `Welcome, Agent. I am your ${subjectName} study AI. Ask me anything from your uploaded notes and I will answer with strict citations. You can also use voice input.`,
+    },
+  ]);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([initialAssistantMessage(selectedSubject.name)]);
-  const [speechSupported, setSpeechSupported] = useState(false);
   const [listening, setListening] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(true);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   useEffect(() => {
-    setMessages([initialAssistantMessage(selectedSubject.name)]);
-  }, [selectedSubject.id, selectedSubject.name]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
 
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
 
-    if (!SpeechRecognition) {
-      setSpeechSupported(false);
-      return;
-    }
-
-    setSpeechSupported(true);
-    const recognition: SpeechRecognitionLike = new SpeechRecognition();
+    const recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.lang = "en-US";
-
-    recognition.onresult = (event) => {
-      const spoken = event?.results?.[0]?.[0]?.transcript?.trim();
-      if (spoken) {
-        setPrompt((current) => (current ? `${current} ${spoken}` : spoken));
-      }
-    };
-
-    recognition.onerror = () => {
+    recognition.onresult = (e: SpeechRecognitionEvent) => {
+      const transcript = e.results[0]?.[0]?.transcript ?? "";
+      if (transcript.trim()) setPrompt(transcript);
       setListening(false);
     };
-
-    recognition.onend = () => {
-      setListening(false);
-    };
-
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
     recognitionRef.current = recognition;
-    return () => {
-      recognition.stop();
-      recognitionRef.current = null;
-    };
   }, []);
 
-  const historyPayload: ChatTurn[] = useMemo(
-    () =>
-      messages
-        .filter((message) => message.id !== "assistant-seed")
-        .slice(-8)
-        .map((message) => ({
-          role: message.role,
-          content: message.text
-        })),
-    [messages]
-  );
-
-  const speak = (text: string) => {
-    if (!ttsEnabled || !("speechSynthesis" in window) || !text.trim()) {
-      return;
-    }
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.lang = "en-US";
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const toggleListening = () => {
-    if (!speechSupported || !recognitionRef.current || loading) {
-      return;
-    }
-
+  const toggleMic = () => {
+    if (!recognitionRef.current) return;
     if (listening) {
       recognitionRef.current.stop();
       setListening(false);
-      return;
+    } else {
+      recognitionRef.current.start();
+      setListening(true);
     }
-
-    setListening(true);
-    recognitionRef.current.start();
   };
 
-  const submitQuestion = async (event: FormEvent) => {
-    event.preventDefault();
-    const trimmed = prompt.trim();
-    if (!trimmed || loading) {
-      return;
-    }
+  const speak = (text: string) => {
+    if (!ttsEnabled || !("speechSynthesis" in window) || !text.trim()) return;
+    window.speechSynthesis.cancel();
+    const clean = text.replace(/\[SOURCE:[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
+    if (!clean) return;
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+  };
 
-    setLoading(true);
-    setMessages((current) => [
-      ...current,
-      { id: `user-${Date.now()}`, role: "user", text: trimmed }
-    ]);
+  const getHistory = (): ChatTurn[] =>
+    messages
+      .filter((m) => m.id !== "seed")
+      .slice(-8)
+      .map((m) => ({ role: m.role, content: m.text }));
+
+  const subject = { id: subjectId, name: subjectName };
+
+  const submitQuestion = async (e?: FormEvent) => {
+    e?.preventDefault();
+    const trimmed = prompt.trim();
+    if (!trimmed || loading) return;
+
+    onQuestionAsked?.();
+    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text: trimmed }]);
     setPrompt("");
+    setLoading(true);
 
     try {
-      const answer = await qaApi.askQuestion(trimmed, selectedSubject, historyPayload);
-      setLatestInsight(selectedSubject.id, trimmed, answer);
-      setMessages((current) => {
-        const updated = [
-          ...current,
-          {
-            id: `assistant-${Date.now()}`,
-            role: "assistant" as const,
-            text: answer.answer,
-            payload: answer
-          }
-        ];
-        return updated;
-      });
+      const answer = await qaApi.askQuestion(trimmed, subject, getHistory());
+      setMessages((prev) => [
+        ...prev,
+        { id: `a-${Date.now()}`, role: "assistant", text: answer.answer, payload: answer },
+      ]);
+      onAnswer?.(answer);
       speak(answer.answer);
+    } catch (err) {
+      const errText = err instanceof Error ? err.message : "Something went wrong.";
+      setMessages((prev) => [
+        ...prev,
+        { id: `e-${Date.now()}`, role: "assistant", text: `ERROR: ${errText}` },
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <section className="panel chat-panel">
-      <div className="panel-title-row">
-        <h2>Subject-scoped Q&A</h2>
-        <span className="pill">{selectedSubject.name}</span>
-      </div>
+    <div className="chat-container">
+      <div className="chat-messages">
+        {messages.map((m) => (
+          <div key={m.id} className={`chat-bubble ${m.role} ${m.text.startsWith("ERROR:") ? "error" : ""}`}>
+            <div>{m.text}</div>
 
-      <div className="voice-row">
-        <button
-          type="button"
-          className={`voice-button ${listening ? "active" : ""}`}
-          onClick={toggleListening}
-          disabled={!speechSupported}
-        >
-          {listening ? <MicOff size={15} /> : <Mic size={15} />}
-          {speechSupported ? (listening ? "Stop voice input" : "Voice input") : "Voice unavailable"}
-        </button>
-
-        <button
-          type="button"
-          className={`voice-button ${ttsEnabled ? "active" : ""}`}
-          onClick={() => {
-            if (ttsEnabled && "speechSynthesis" in window) {
-              window.speechSynthesis.cancel();
-            }
-            setTtsEnabled((current) => !current);
-          }}
-        >
-          {ttsEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-          {ttsEnabled ? "Voice playback on" : "Voice playback off"}
-        </button>
-      </div>
-
-      <div className="chat-list">
-        {messages.map((message) => (
-          <article className={`chat-bubble chat-bubble--${message.role}`} key={message.id}>
-            <p>{message.text}</p>
-            {message.role === "assistant" && message.id !== "assistant-seed" ? (
-              <button type="button" className="bubble-speak" onClick={() => speak(message.text)}>
-                <Volume2 size={12} />
-                Read aloud
-              </button>
-            ) : null}
-            {message.payload ? (
-              <footer>
-                <strong>
-                  {message.payload.confidenceTier} ({(message.payload.confidenceScore * 100).toFixed(1)}%)
-                </strong>
-                {message.payload.citations.length ? (
-                  message.payload.citations.map((citation) => (
-                    <span key={`${message.id}-${citation.chunkId || citation.locationRef}`}>
-                      {citation.fileName} | {citation.locationRef}
+            {m.payload && (
+              <>
+                <div className="chat-bubble__meta">
+                  <span className={`confidence-badge ${m.payload.confidenceTier}`}>
+                    {m.payload.confidenceTier} - {(m.payload.confidenceScore * 100).toFixed(0)}%
+                  </span>
+                  {m.payload.citations?.map((c, i) => (
+                    <span className="citation-chip" key={i}>
+                      DOC {c.fileName} | {c.locationRef}
                     </span>
-                  ))
-                ) : (
-                  <span>No grounded citation found. Returned strict NOT_FOUND.</span>
-                )}
-                {message.payload.evidenceSnippets.length ? (
-                  <div className="evidence-list">
-                    {message.payload.evidenceSnippets.slice(0, 3).map((snippet) => (
-                      <small key={`${message.id}-${snippet.slice(0, 20)}`}>{snippet}</small>
+                  ))}
+                </div>
+
+                {m.payload.evidenceSnippets?.length > 0 && (
+                  <details className="chat-evidence">
+                    <summary>View evidence ({m.payload.evidenceSnippets.length} snippets)</summary>
+                    {m.payload.evidenceSnippets.map((s, i) => (
+                      <p key={i}>"{s}"</p>
                     ))}
-                  </div>
-                ) : null}
-              </footer>
-            ) : null}
-          </article>
+                  </details>
+                )}
+              </>
+            )}
+          </div>
         ))}
+
+        {loading && (
+          <div className="chat-bubble assistant">
+            <div className="chat-loading">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
       </div>
 
-      <form className="chat-input-row" onSubmit={submitQuestion}>
+      <form className="chat-input-bar" onSubmit={submitQuestion}>
+        <button
+          type="button"
+          className={`chat-action-btn ${listening ? "listening" : ""}`}
+          onClick={toggleMic}
+          title={listening ? "Stop listening" : "Voice input"}
+        >
+          {listening ? <MicOff size={18} /> : <Mic size={18} />}
+        </button>
+
         <input
+          type="text"
+          placeholder={`Ask about ${subjectName}...`}
           value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          placeholder="Ask from your notes only..."
-          aria-label="Ask question"
+          onChange={(e) => setPrompt(e.target.value)}
+          disabled={loading}
         />
-        <button type="submit" disabled={loading}>
+
+        <button
+          type="button"
+          className={`chat-action-btn ${ttsEnabled ? "active" : ""}`}
+          onClick={() => setTtsEnabled(!ttsEnabled)}
+          title={ttsEnabled ? "Disable voice output" : "Enable voice output"}
+        >
+          {ttsEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+        </button>
+
+        <button type="submit" className="chat-action-btn send" disabled={loading || !prompt.trim()}>
           <SendHorizonal size={18} />
-          {loading ? "Checking..." : "Ask"}
         </button>
       </form>
-    </section>
+    </div>
   );
 };
 

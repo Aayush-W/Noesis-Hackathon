@@ -6,6 +6,6 @@ export const useAuth = () => {
   return {
     ...auth,
     login: authStore.login,
-    logout: authStore.logout
+    logout: authStore.logout,
   };
 };

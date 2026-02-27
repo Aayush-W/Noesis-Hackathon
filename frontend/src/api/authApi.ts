@@ -1,4 +1,3 @@
-import type { AxiosResponse } from "axios";
 import apiClient from "./axios";
 
 interface LoginPayload {
@@ -6,12 +5,25 @@ interface LoginPayload {
   password: string;
 }
 
+interface RegisterPayload {
+  name: string;
+  email: string;
+  password: string;
+}
+
+interface AuthResponse {
+  token: string;
+  user: { id: string; name: string; email: string };
+}
+
 export const authApi = {
-  async login(payload: LoginPayload): Promise<AxiosResponse | { ok: true }> {
-    if (import.meta.env.VITE_USE_REAL_API === "true") {
-      return apiClient.post("/auth/login", payload);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    return { ok: true };
-  }
+  async login(payload: LoginPayload): Promise<AuthResponse> {
+    const res = await apiClient.post<AuthResponse>("/auth/login", payload);
+    return res.data;
+  },
+
+  async register(payload: RegisterPayload): Promise<AuthResponse> {
+    const res = await apiClient.post<AuthResponse>("/auth/register", payload);
+    return res.data;
+  },
 };

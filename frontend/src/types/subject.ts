@@ -1,9 +1,9 @@
 export interface Subject {
   id: string;
   name: string;
-  examLabel: string;
-  documentCount: number;
-  coverage: number;
+  examLabel?: string;
+  documentCount?: number;
+  coverage?: number;
 }
 
 export interface FlashcardSet {

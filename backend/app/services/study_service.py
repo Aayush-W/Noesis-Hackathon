@@ -1,4 +1,5 @@
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 import json
 import random
 import asyncio
@@ -10,11 +11,11 @@ from app.core.database import get_db
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
+_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+FLASH_LITE_MODEL = "models/gemini-flash-lite-latest"
 
 # Use Flash for faster generation of quizzes
-study_model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
+_study_config = genai_types.GenerateContentConfig(
     system_instruction="You are AskMyNotes Quiz Master. Generate questions STRICTLY from the provided source text chunks.",
 )
 
@@ -70,7 +71,7 @@ async def _identify_key_concepts(subject_id: str) -> List[str]:
         {chunks_summary}
         """
         
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: study_model.generate_content(
@@ -133,7 +134,7 @@ async def generate_quiz(subject_id: str) -> dict:
     prompt = PROMPT_TEMPLATE.format(chunks_text=chunks_text)
     
     # Enable JSON mode for gemini
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     response = await loop.run_in_executor(
         None,
         lambda: study_model.generate_content(
@@ -154,3 +155,5 @@ async def get_remedial_chunk(chunk_id: str) -> dict:
     db = get_db()
     chunk = await db.chunks.find_one({"chunkId": chunk_id}, {"_id": 0})
     return chunk
+
+

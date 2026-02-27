@@ -111,3 +111,47 @@ We chose a **Retrieval-Augmented Generation (RAG)** architecture with custom gua
 - **Exam Preparation (Study Mode)**: A student uploads their semester notes for Biology. They click "Generate Study Material" to immediately test themselves with bespoke 5 MCQs and 3 SAQs, seeing exactly where they went wrong based on their own notes.
 - **Complex Concept Breakdown (Multi-Turn Chat)**: A student uploads a dense Physics paper. They say into their microphone, *"What is quantum entanglement?"* After the copilot reads the explanation, the student follows up with, *"I didn't understand that, can you simplify it?"* The copilot remembers the context and breaks it down using simpler excerpts from the same text.
 - **Curbing Misinformation (Strict Scoping)**: A student asks a history question inside their Chemistry workspace. The app successfully blocks the LLM from hallucinating an answer from its training data, returning "Not found in your notes for Chemistry."
+
+---
+
+## Deployment Quickstart
+
+### Option A: Docker Compose (full stack)
+
+1. Add secrets in root shell (PowerShell example):
+   ```powershell
+   $env:GEMINI_API_KEY="your_real_key"
+   $env:SECRET_KEY="replace_with_long_secret"
+   ```
+2. Build and start:
+   ```bash
+   docker compose up --build
+   ```
+3. Open:
+   - Frontend: `http://localhost:5173`
+   - Backend docs: `http://localhost:8000/docs`
+
+### Option B: Local dev with env templates
+
+1. Copy env templates:
+   - `backend/.env.example` -> `backend/.env`
+   - `frontend/.env.example` -> `frontend/.env`
+2. Start backend:
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   uvicorn app.main:app --reload --port 8000
+   ```
+3. Start frontend:
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+## Health and ingestion endpoints
+
+- Basic health: `GET /health`
+- Readiness with checks: `GET /health/ready`
+- File upload and indexing: `POST /api/v1/upload`
+- URL scraping + indexing: `POST /api/v1/upload/url`

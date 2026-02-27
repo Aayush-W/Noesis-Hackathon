@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict
+from typing import Any, Dict, List, Optional
 
 class QARequest(BaseModel):
     subjectId: str
@@ -18,3 +18,5 @@ class QAResponse(BaseModel):
     confidenceScore: float
     citations: List[Citation]
     evidenceSnippets: List[str]
+    topChunkIds: Optional[List[str]] = None
+    diagnostics: Optional[Dict[str, Any]] = None

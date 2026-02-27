@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: askmynotes-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  backend:
+    build:
+      context: ./backend
+    container_name: askmynotes-backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MONGODB_URL: mongodb://mongo:27017
+      DATABASE_NAME: askmynotes
+      CHROMA_PERSIST_DIRECTORY: /app/chroma_db
+      SECRET_KEY: ${SECRET_KEY:-change-this-secret}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/chroma_db:/app/chroma_db
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000/api/v1
+    container_name: askmynotes-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  mongo_data:

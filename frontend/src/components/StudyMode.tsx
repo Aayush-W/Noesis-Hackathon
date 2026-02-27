@@ -1,6 +1,7 @@
 import { FileSpreadsheet, FileText, Upload, X } from "lucide-react";
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 import { studyApi } from "../api/studyApi";
+import { uploadApi } from "../api/uploadApi";
 import { useSubject } from "../hooks/useSubject";
 
 type PracticeSourceTab = "upload" | "paste";
@@ -47,6 +48,19 @@ const StudyMode = ({ open, onClose, onGenerated }: StudyModeProps) => {
     setError("");
     setGenerating(true);
     try {
+      // Upload selected files or pasted text to the backend first
+      const filesToUpload: File[] = [...selectedFiles];
+      if (tab === "paste" && pasteText.trim().length > 25) {
+        filesToUpload.push(
+          new File([pasteText], "pasted-notes.txt", { type: "text/plain" })
+        );
+      }
+
+      for (const file of filesToUpload) {
+        await uploadApi.uploadNotes(file, selectedSubject.id);
+      }
+
+      // Now generate quiz from the stored chunks
       const generated = await studyApi.generatePracticeTest(selectedSubject.id);
       const mcqCount = generated.mcqs?.length ?? 0;
       const saqCount = generated.saqs?.length ?? 0;
