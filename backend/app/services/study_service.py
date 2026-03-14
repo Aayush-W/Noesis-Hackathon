@@ -1,159 +1,78 @@
+import json
+import asyncio
+import random
+from typing import List
 from google import genai
 from google.genai import types as genai_types
-import json
-import random
-import asyncio
-import logging
-import re
-from typing import List
-from app.core.config import settings
-from app.core.database import get_db
+from firebase_admin import firestore
+import os
 
-logger = logging.getLogger(__name__)
+GENERATION_MODEL = "models/gemini-flash-lite-latest"
 
-_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-FLASH_LITE_MODEL = "models/gemini-flash-lite-latest"
+def _get_client():
+    return genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# Use Flash for faster generation of quizzes
-_study_config = genai_types.GenerateContentConfig(
-    system_instruction="You are AskMyNotes Quiz Master. Generate questions STRICTLY from the provided source text chunks.",
-)
-
-PROMPT_TEMPLATE = """
-Generate a study quiz based ONLY on the following text chunks.
-Follow this exact JSON structure and do not output anything else.
-
-CHUNKS:
-{chunks_text}
-
-JSON SCHEMA:
-{{
-  "mcqs": [
-    {{
-      "question": "Question text",
-      "options": ["A", "B", "C", "D"],
-      "correctOptionIndex": 0,
-      "explanation": "Brief explanation",
-      "sourceChunkId": "chunk_id_from_above"
-    }}, ... (exactly 5 MCQs)
-  ],
-  "saqs": [
-    {{
-      "question": "Short answer question",
-      "modelAnswer": "Expected correct answer",
-      "sourceChunkId": "chunk_id_from_above"
-    }}, ... (exactly 3 SAQs)
-  ]
-}}
-"""
-
-async def _identify_key_concepts(subject_id: str) -> List[str]:
-    """
-    Identify major topics/concepts in the subject notes using LLM analysis.
-    This helps in sampling relevant chunks for the quiz.
-    """
+async def _identify_key_concepts(subject_id: str, user_id: str) -> List[str]:
+    db = firestore.client()
+    chunks_ref = db.collection("users").document(user_id).collection("subjects").document(subject_id).collection("chunks")
+    docs = chunks_ref.limit(20).get()
+    chunks = [{"chunkId": doc.id, **doc.to_dict()} for doc in docs]
+    if not chunks:
+        return []
+    
+    chunks_summary = "\n".join([f"- {c.get('text', '')[:150]}..." for c in chunks])
+    prompt = f"Analyze these snippets and identify the 5 most important distinct concepts. Output ONLY a JSON list of strings.\nNOTES:\n{chunks_summary}"
     try:
-        db = get_db()
-        # Fetch a sample of chunks (first 20) to identify core topics
-        cursor = db.chunks.find({"subjectId": subject_id}).limit(20)
-        chunks = await cursor.to_list(length=20)
-        
-        if not chunks:
-            return []
-            
-        chunks_summary = "\n".join([f"- {c['text'][:150]}..." for i, c in enumerate(chunks)])
-        
-        prompt = f"""
-        Analyze these snippets from a student's notes and identify the 5 most important distinct concepts, keywords or topics.
-        Output ONLY a JSON list of strings.
-        
-        NOTES:
-        {chunks_summary}
-        """
-        
+        client = _get_client()
         loop = asyncio.get_running_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: study_model.generate_content(
-                prompt,
-                generation_config={"response_mime_type": "application/json"}
+        resp = await loop.run_in_executor(
+            None, lambda: client.models.generate_content(
+                model=GENERATION_MODEL, contents=prompt,
+                config=genai_types.GenerateContentConfig(response_mime_type="application/json")
             )
         )
-        concepts = json.loads(response.text)
-        logger.info(f"Identified concepts for {subject_id}: {concepts}")
-        return concepts
-    except Exception as e:
-        logger.error(f"Failed to identify concepts: {str(e)}")
+        return json.loads(resp.text)
+    except Exception:
         return []
 
-async def generate_quiz(subject_id: str) -> dict:
-    """
-    Generate a representative quiz by sampling chunks based on identified concepts.
-    """
-    db = get_db()
+async def generate_quiz(subject_id: str, user_id: str) -> dict:
+    db = firestore.client()
+    chunks_ref = db.collection("users").document(user_id).collection("subjects").document(subject_id).collection("chunks")
+    concepts = await _identify_key_concepts(subject_id, user_id)
+    selected = []
     
-    # 1. Identify key concepts
-    concepts = await _identify_key_concepts(subject_id)
-    
-    # 2. Sample chunks based on concepts
-    selected_chunks = []
-    seen_ids = set()
-    
-    if concepts:
-        for concept in concepts:
-            # Try to find a chunk containing this concept
-            cursor = db.chunks.find({
-                "subjectId": subject_id,
-                "text": {"$regex": re.escape(concept), "$options": "i"},
-                "chunkId": {"$nin": list(seen_ids)}
-            }).limit(1)
-            concept_chunks = await cursor.to_list(length=1)
-            
-            if concept_chunks:
-                selected_chunks.append(concept_chunks[0])
-                seen_ids.add(concept_chunks[0]["chunkId"])
-    
-    # Fill up to 8 chunks with random sampling if needed
-    if len(selected_chunks) < 8:
-        needed = 8 - len(selected_chunks)
-        pipeline = [
-            {"$match": {"subjectId": subject_id, "chunkId": {"$nin": list(seen_ids)}}},
-            {"$sample": {"size": needed}}
-        ]
-        cursor = db.chunks.aggregate(pipeline)
-        extra_chunks = await cursor.to_list(length=needed)
-        selected_chunks.extend(extra_chunks)
-        
-    if not selected_chunks:
+    all_chunks = [{"chunkId": doc.id, **doc.to_dict()} for doc in chunks_ref.limit(50).get()]
+    if not all_chunks:
         raise ValueError("Not enough notes uploaded for this subject to generate a quiz.")
-        
-    chunks_text = ""
-    for c in selected_chunks:
-        chunks_text += f"\n[CHUNK ID: {c['chunkId']}]\n{c['text']}\n"
-        
-    prompt = PROMPT_TEMPLATE.format(chunks_text=chunks_text)
     
-    # Enable JSON mode for gemini
-    loop = asyncio.get_running_loop()
-    response = await loop.run_in_executor(
-        None,
-        lambda: study_model.generate_content(
-            prompt,
-            generation_config={"response_mime_type": "application/json"}
-        )
-    )
-    
+    for c in concepts:
+        for chunk in all_chunks:
+            if chunk not in selected and c.lower() in chunk.get("text", "").lower():
+                selected.append(chunk)
+                break
+                
+    if len(selected) < 8:
+        rem = [c for c in all_chunks if c not in selected]
+        selected.extend(random.sample(rem, min(8 - len(selected), len(rem))))
+        
+    chunks_text = "\n".join([f"[CHUNK ID: {c['chunkId']}]\n{c.get('text', '')}" for c in selected])
+    prompt = f"""Generate a study quiz based ONLY on the following text chunks. Follow exact JSON structure.
+CHUNKS:
+{chunks_text}
+JSON SCHEMA:
+{{ "mcqs": [ {{"question":"", "options":["A","B","C","D"], "correctOptionIndex":0, "explanation":"", "sourceChunkId":""}} ],
+  "saqs": [ {{"question":"", "modelAnswer":"", "sourceChunkId":""}} ] }}
+Must have exactly 5 MCQs and 3 SAQs."""
+
     try:
-        quiz_data = json.loads(response.text)
-        return quiz_data
-    except json.JSONDecodeError:
-        # Fallback if model fails to format JSON correctly
+        client = _get_client()
+        loop = asyncio.get_running_loop()
+        resp = await loop.run_in_executor(
+            None, lambda: client.models.generate_content(
+                model=GENERATION_MODEL, contents=prompt,
+                config=genai_types.GenerateContentConfig(response_mime_type="application/json")
+            )
+        )
+        return json.loads(resp.text)
+    except Exception:
         return {"error": "Failed to generate quiz format"}
-
-async def get_remedial_chunk(chunk_id: str) -> dict:
-    """Fetch the exact chunk text for a wrong answer in the UI."""
-    db = get_db()
-    chunk = await db.chunks.find_one({"chunkId": chunk_id}, {"_id": 0})
-    return chunk
-
-

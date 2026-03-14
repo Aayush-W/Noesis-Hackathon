@@ -1,4 +1,5 @@
 import apiClient from "./axios";
+import { auth } from "../firebase";
 
 export interface MCQ {
   question: string;
@@ -24,7 +25,13 @@ export const studyApi = {
     if (!subjectId) {
       throw new Error("A selected subject is required for subject-scoped study mode.");
     }
-    const response = await apiClient.post<StudyTestResponse>(`/study/generate/${subjectId}`);
-    return response.data;
+    const user = auth.currentUser;
+    if (!user) throw new Error("Not authenticated");
+    const token = await user.getIdToken();
+
+    const res = await apiClient.post<StudyTestResponse>(`/study/generate/${subjectId}`, {}, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    return res.data;
   }
 };

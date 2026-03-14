@@ -179,21 +179,28 @@ async def extract_pdf(file_bytes: bytes) -> dict:
     ocr_used = False
     ocr_confidences: list[float] = []
 
+    ocr_pages_processed = 0
+    MAX_OCR_PAGES = 20  # Limit to 20 pages of OCR to prevent 120s Timeout on CPUs
+
     for page_num, page in enumerate(doc):
         text = page.get_text().strip()
 
         # Sparse native text layer likely indicates scanned page.
         if len(text) < OCR_TEXT_THRESHOLD:
-            ocr_used = True
-            pix = page.get_pixmap(dpi=220)
-            img_bytes = pix.tobytes("png")
-            result = await extract_image(img_bytes, page_ref=f"p.{page_num + 1}")
-            ocr_text = result.get("text", "").strip()
-            ocr_confidences.append(float(result.get("confidence", 0.0)))
+            if ocr_pages_processed < MAX_OCR_PAGES:
+                ocr_used = True
+                pix = page.get_pixmap(dpi=220)
+                img_bytes = pix.tobytes("png")
+                result = await extract_image(img_bytes, page_ref=f"p.{page_num + 1}")
+                ocr_text = result.get("text", "").strip()
+                ocr_confidences.append(float(result.get("confidence", 0.0)))
 
-            # If OCR returns little/no text, preserve sparse native extraction.
-            final_text = ocr_text if ocr_text else text
-            pages.append({"page": page_num + 1, "text": final_text, "ocr": bool(ocr_text)})
+                # If OCR returns little/no text, preserve sparse native extraction.
+                final_text = ocr_text if ocr_text else text
+                pages.append({"page": page_num + 1, "text": final_text, "ocr": bool(ocr_text)})
+                ocr_pages_processed += 1
+            else:
+                pages.append({"page": page_num + 1, "text": "[OCR Limit Reached - Page Skipped]", "ocr": False})
         else:
             pages.append({"page": page_num + 1, "text": text, "ocr": False})
 
@@ -212,8 +219,9 @@ async def extract_pdf(file_bytes: bytes) -> dict:
 
 async def extract_image(img_bytes: bytes, page_ref: str = "img") -> dict:
     """Extract text from images using EasyOCR."""
+    import asyncio
     try:
-        text, conf = _run_easyocr(img_bytes)
+        text, conf = await asyncio.to_thread(_run_easyocr, img_bytes)
         return {"text": text, "ocr_used": True, "confidence": conf, "pageRef": page_ref}
     except Exception as e:
         return {

@@ -1,24 +1,22 @@
-from fastapi import APIRouter, HTTPException
-from app.services.study_service import generate_quiz, get_remedial_chunk
-from app.core.database import get_db
+import logging
+from fastapi import APIRouter, HTTPException, Request
 
+from app.services.study_service import generate_quiz
+from app.utils.user_context import resolve_user_id
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/generate/{subject_id}")
-async def generate_subject_quiz(subject_id: str):
+async def generate_study_test(subject_id: str, request: Request):
+    user_id = resolve_user_id(request)
     try:
-        quiz = await generate_quiz(subject_id)
-        if "error" in quiz:
-            raise HTTPException(status_code=500, detail=quiz["error"])
-        return quiz
-    except ValueError as v:
-        raise HTTPException(status_code=400, detail=str(v))
+        response = await generate_quiz(subject_id, user_id)
+        if "error" in response:
+            raise HTTPException(status_code=500, detail=response["error"])
+        return response
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/remedial/{chunk_id}")
-async def fetch_remedial_context(chunk_id: str):
-    chunk = await get_remedial_chunk(chunk_id)
-    if not chunk:
-        raise HTTPException(status_code=404, detail="Source chunk not found")
-    return chunk
+        logger.exception("Unexpected mission generation error")
+        raise HTTPException(status_code=500, detail="Internal server error")

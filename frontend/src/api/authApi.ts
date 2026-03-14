@@ -1,4 +1,5 @@
-import apiClient from "./axios";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { auth } from "../firebase";
 
 interface LoginPayload {
   email: string;
@@ -18,12 +19,29 @@ interface AuthResponse {
 
 export const authApi = {
   async login(payload: LoginPayload): Promise<AuthResponse> {
-    const res = await apiClient.post<AuthResponse>("/auth/login", payload);
-    return res.data;
+    const userCredential = await signInWithEmailAndPassword(auth, payload.email, payload.password);
+    const token = await userCredential.user.getIdToken();
+    return {
+      token,
+      user: {
+        id: userCredential.user.uid,
+        name: userCredential.user.displayName || "User",
+        email: userCredential.user.email || payload.email,
+      }
+    };
   },
 
   async register(payload: RegisterPayload): Promise<AuthResponse> {
-    const res = await apiClient.post<AuthResponse>("/auth/register", payload);
-    return res.data;
+    const userCredential = await createUserWithEmailAndPassword(auth, payload.email, payload.password);
+    await updateProfile(userCredential.user, { displayName: payload.name });
+    const token = await userCredential.user.getIdToken();
+    return {
+      token,
+      user: {
+        id: userCredential.user.uid,
+        name: payload.name,
+        email: payload.email,
+      }
+    };
   },
 };

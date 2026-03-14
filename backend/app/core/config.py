@@ -8,17 +8,14 @@ class Settings(BaseSettings):
     # Gemini API
     GEMINI_API_KEY: str = ""
     
-    # Chroma DB
-    CHROMA_PERSIST_DIRECTORY: str = "./chroma_db"
-    
-    # MongoDB
-    MONGODB_URL: str = "mongodb://localhost:27017"
-    DATABASE_NAME: str = "askmynotes"
+    # Firebase Service Account
+    GOOGLE_APPLICATION_CREDENTIALS: str = ""
+    FIREBASE_SERVICE_ACCOUNT_PATH: str = ""
     
     # Security
     SECRET_KEY: str = "your-secret-key-here"  # change in production
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=True)
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore")
 
 settings = Settings()

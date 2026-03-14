@@ -11,8 +11,8 @@ _client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 # Only model available in google.genai SDK (v1beta API)
 EMBEDDING_MODELS = ["models/gemini-embedding-001"]
-EMBEDDING_DIM = 768
-_active_embedding_dim = EMBEDDING_DIM
+EMBEDDING_DIM = 768  # text-embedding-004 outputs 768-dim vectors
+_active_embedding_dim = 0  # Will auto-detect from first successful embedding call
 TASK_TYPE_DOC = "RETRIEVAL_DOCUMENT"
 TASK_TYPE_QUERY = "RETRIEVAL_QUERY"
 MAX_RETRIES = 3
@@ -37,13 +37,13 @@ def _stabilize_fallback_embedding(embedding: list[float]) -> list[float]:
         return embedding
     return [x / norm for x in centered]
 
-async def embed_chunks(chunks: list[dict], batch_size: int = 50) -> list[dict]:
+async def embed_chunks(chunks: list[dict], batch_size: int = 5) -> list[dict]:
     """
     Embed document chunks with RETRIEVAL_DOCUMENT task type for asymmetric retrieval.
     
     Args:
         chunks: List of chunk dictionaries with 'text' key
-        batch_size: Number of chunks to embed per API call (default 50)
+        batch_size: Number of chunks to embed per API call (default 5)
         
     Returns:
         List of chunks with 'embedding' field added
@@ -86,6 +86,7 @@ async def embed_chunks(chunks: list[dict], batch_size: int = 50) -> list[dict]:
                 if not single:
                     raise EmbeddingError("Failed to embed chunk during fallback mode")
                 embeddings.append(_stabilize_fallback_embedding(single[0]))
+                await asyncio.sleep(1.0)  # Rate limiting
         
         for chunk, embedding in zip(batch_chunks, embeddings):
             if not validate_embedding(embedding):
@@ -93,6 +94,9 @@ async def embed_chunks(chunks: list[dict], batch_size: int = 50) -> list[dict]:
                 raise EmbeddingError(f"Invalid embedding for chunk {chunk.get('chunkId', 'unknown')}")
             chunk["embedding"] = embedding
             embedded_chunks.append(chunk)
+
+        # Sleep between batches strictly to respect Gemini Free Tier 15 RPM
+        await asyncio.sleep(5.0)
             
     logger.info(f"Successfully embedded {len(embedded_chunks)} chunks")
     return embedded_chunks
@@ -147,7 +151,16 @@ async def _embed_with_retry(texts: list[str], task_type: str) -> list[list[float
                     )
                 )
                 embeddings = result.embeddings  # list of ContentEmbedding objects
-                vecs = [list(e.values) for e in embeddings]
+                
+                # Firestore has a hard limit of 2048 dimensions.
+                # If a model like gemini-embedding-001 outputs 3072 dimensions, we MUST truncate it.
+                vecs = []
+                for e in embeddings:
+                    val_list = list(e.values)
+                    if len(val_list) > EMBEDDING_DIM:
+                        val_list = val_list[:EMBEDDING_DIM]
+                    vecs.append(val_list)
+                    
                 _sync_embedding_dim(vecs)
                 return vecs
 
@@ -168,6 +181,15 @@ async def _embed_with_retry(texts: list[str], task_type: str) -> list[list[float
 
                 if attempt < MAX_RETRIES - 1:
                     wait_time = RETRY_DELAY * (2 ** attempt)
+                    
+                    # Try to parse exact requested delay from Gemini 429 errors (e.g. "'retryDelay': '44s'")
+                    import re
+                    retry_match = re.search(r"'retryDelay':\s*'(\d+)s'", error_text)
+                    if retry_match:
+                        requested_delay = int(retry_match.group(1))
+                        logger.warning(f"Rate limited! Gemini requested a delay of {requested_delay}s. Sleeping...")
+                        wait_time = requested_delay + 2  # Add 2s buffer
+                        
                     await asyncio.sleep(wait_time)
                 else:
                     logger.error("Embedding failed after %d retries for model %s", MAX_RETRIES, model_name)

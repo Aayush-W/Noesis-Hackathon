@@ -5,14 +5,13 @@ pydantic-settings
 python-dotenv
 python-multipart
 google-generativeai
-chromadb
+firebase-admin
 langchain
 langchain-text-splitters
 PyMuPDF
 python-docx
 python-pptx
 Pillow
-motor
 easyocr
 numpy
 certifi

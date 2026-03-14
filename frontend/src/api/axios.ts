@@ -1,38 +1,30 @@
 import axios from "axios";
-
-const TOKEN_KEY = "amn_token";
-const USER_KEY = "amn_user";
+import { auth } from "../firebase";
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1",
-  timeout: 60000
+  timeout: 120000,
 });
 
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY);
-  const userRaw = localStorage.getItem(USER_KEY);
-
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-
-  if (userRaw) {
-    try {
-      const parsed = JSON.parse(userRaw) as { id?: string };
-      if (parsed?.id) {
-        config.headers["x-user-id"] = parsed.id;
-      }
-    } catch {
-      // Ignore malformed local storage user payload.
+// Always attach a fresh Firebase token before every request
+apiClient.interceptors.request.use(async (config) => {
+  try {
+    const user = auth.currentUser;
+    if (user) {
+      // forceRefresh=false returns a cached (valid) token or refreshes if expired
+      const token = await user.getIdToken(false);
+      config.headers.Authorization = `Bearer ${token}`;
+      config.headers["x-user-id"] = user.uid;
     }
+  } catch (err) {
+    console.warn("Failed to attach Firebase token:", err);
   }
-
   return config;
 });
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 export default apiClient;
