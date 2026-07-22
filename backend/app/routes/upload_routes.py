@@ -3,14 +3,15 @@ import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
 
 from app.core.database import get_db
 # Restoring FastAPI routes but adapting to use Firebase 
 from firebase_admin import firestore, storage
 from app.services.chunking_service import chunk_text
 from app.services.embedding_service import embed_chunks
-from app.services.extraction_service import extract_text_from_file
+from app.services.extraction_service import extract_text_from_file, get_page_count
+from app.services.background_task_service import run_ocr_pipeline
 from app.services.scraping_service import ScrapingError, scrape_url
 from app.utils.user_context import resolve_user_id
 
@@ -84,7 +85,12 @@ async def _index_document(*, db, user_id: str, subject_id: str, filename: str, s
     return {"message": "Upload successful", "documentId": doc_id, "chunkCount": len(embedded_chunks)}
 
 @router.post("/")
-async def upload_document(request: Request, subjectId: str = Form(...), file: UploadFile = File(...)):
+async def upload_document(
+    request: Request, 
+    background_tasks: BackgroundTasks,
+    subjectId: str = Form(...), 
+    file: UploadFile = File(...)
+):
     db = firestore.client()
     user_id = resolve_user_id(request)
     await _ensure_subject(db, subjectId, user_id)
@@ -94,10 +100,57 @@ async def upload_document(request: Request, subjectId: str = Form(...), file: Up
     if source_format not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Unsupported file type")
 
-    content = await file.read()
-    extraction = await extract_text_from_file(content, filename)
+    # Read bytes and metadata in the request thread
+    file_bytes = await file.read()
+    total_pages = get_page_count(file_bytes)
+    job_id = str(uuid.uuid4())
+
+    # Initialize job document in Firestore
+    job_data = {
+        "job_id": job_id,
+        "user_id": user_id,
+        "status": "pending",
+        "file_name": filename,
+        "pages_total": total_pages,
+        "pages_done": 0,
+        "pages_failed": [],
+        "result": [],
+        "created_at": firestore.SERVER_TIMESTAMP,
+        "updated_at": firestore.SERVER_TIMESTAMP,
+        "error": None
+    }
+    db.collection("jobs").document(job_id).set(job_data)
+
+    # Trigger background processing
+    background_tasks.add_task(
+        run_ocr_pipeline, 
+        job_id, 
+        file_bytes, 
+        user_id, 
+        subjectId, 
+        filename, 
+        source_format
+    )
+
+    return {"job_id": job_id}
+
+@router.get("/status/{job_id}")
+async def get_job_status(job_id: str, request: Request):
+    db = firestore.client()
+    user_id = resolve_user_id(request)
+    # Note: Status check via GET is less used now with onSnapshot but kept for compatibility
+    # However we'd need subjectId here to find it. For now, since it's just a GET, 
+    # and we want real-time, onSnapshot is the primary path.
+    raise HTTPException(status_code=501, detail="Synchronous status polling deprecated. Use Firestore onSnapshot.")
     
-    return await _index_document(db=db, user_id=user_id, subject_id=subjectId, filename=filename, source_format=source_format, extraction=extraction)
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    data = doc.to_dict()
+    if data.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+        
+    return data
 
 @router.post("/url")
 async def upload_url(request: Request, subjectId: str = Form(...), url: str = Form(...)):

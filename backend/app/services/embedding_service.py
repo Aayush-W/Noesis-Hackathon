@@ -7,6 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+print(f"DEBUG: embedding_service initializing with key: {settings.GEMINI_API_KEY[:10]}...")
 _client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 # Only model available in google.genai SDK (v1beta API)

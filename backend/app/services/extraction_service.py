@@ -1,11 +1,22 @@
 import io
 import re
-from typing import Optional
+import logging
+import asyncio
+from typing import Optional, List, Dict, Any
 
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+import httpx
 import easyocr
 import fitz  # PyMuPDF
 import numpy as np
 from PIL import Image
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 try:
     import docx
@@ -34,12 +45,173 @@ OCR_MIN_GOOD_CONF = 0.50
 OCR_MIN_GOOD_SCORE = 0.48
 
 
+HF_TROCR_URL = "https://api-inference.huggingface.co/models/microsoft/trocr-base-handwritten"
+
 def _get_ocr_reader() -> easyocr.Reader:
     """Lazily initialize EasyOCR reader to avoid startup overhead."""
     global _ocr_reader
     if _ocr_reader is None:
         _ocr_reader = easyocr.Reader(OCR_LANGUAGES, gpu=False)
     return _ocr_reader
+
+def get_page_count(file_bytes: bytes) -> int:
+    """Get total number of pages in a PDF document."""
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    count = len(doc)
+    doc.close()
+    return count
+
+def rasterize_page(file_bytes: bytes, page_num: int, dpi: int = 300) -> np.ndarray:
+    """Rasterize a PDF page to a numpy array (RGB)."""
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    page = doc.load_page(page_num)
+    pix = page.get_pixmap(dpi=dpi)
+    img = Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
+    doc.close()
+    return np.array(img)
+
+def segment_lines(image_np: np.ndarray) -> List[np.ndarray]:
+    """Segment an image into lines using horizontal projection profiling."""
+    if cv2 is None:
+        return [image_np]  # Fallback to full image if cv2 not available
+        
+    gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
+    # Thresholding to get binary image
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    
+    # Horizontal projection
+    horizontal_projection = np.sum(binary, axis=1)
+    
+    # Find lines based on horizontal projection gaps
+    height = horizontal_projection.shape[0]
+    line_bounds = []
+    in_line = False
+    start = 0
+    
+    # Threshold for noise in projection
+    proj_threshold = np.max(horizontal_projection) * 0.01
+    
+    for i in range(height):
+        if not in_line and horizontal_projection[i] > proj_threshold:
+            in_line = True
+            start = i
+        elif in_line and horizontal_projection[i] <= proj_threshold:
+            in_line = False
+            # Filter noise lines (e.g. underlines) shorter than 15px as per V2.3 plan
+            if i - start >= 15:
+                line_bounds.append((start, i))
+                
+    if in_line and height - start >= 15:
+        line_bounds.append((start, height))
+        
+    # Crop lines
+    line_crops = []
+    for start, end in line_bounds:
+        # Add a small padding
+        p_start = max(0, start - 5)
+        p_end = min(height, end + 5)
+        line_crops.append(image_np[p_start:p_end, :])
+        
+    return line_crops
+
+async def _call_hf_api(image_bytes: bytes) -> httpx.Response:
+    """Call HuggingFace Inference API with authorization."""
+    headers = {"Authorization": f"Bearer {settings.HF_TOKEN}"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        return await client.post(HF_TROCR_URL, headers=headers, content=image_bytes)
+
+async def run_trocr_inference(image_np: np.ndarray) -> str:
+    """Run TrOCR inference on an image (page or line crop) with warmup handling."""
+    if not settings.HF_TOKEN:
+        logger.warning("HF_TOKEN missing; failing TrOCR path.")
+        return ""
+        
+    # Convert NP array to bytes
+    img = Image.fromarray(image_np)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    img_bytes = buf.getvalue()
+    
+    # HF Cold Start / Warmup logic (3 retries)
+    for attempt in range(3):
+        try:
+            response = await _call_hf_api(img_bytes)
+            if response.status_code == 200:
+                result = response.json()
+                if isinstance(result, list) and len(result) > 0:
+                    return result[0].get("generated_text", "")
+                return ""
+            elif response.status_code == 503:
+                # Model loading
+                wait_time = response.json().get("estimated_time", 20)
+                logger.info(f"HuggingFace model loading. Waiting {wait_time}s (attempt {attempt+1}/3)")
+                await asyncio.sleep(min(wait_time, 30))  # Cap wait time
+                continue
+            else:
+                logger.error(f"HF API returned status {response.status_code}: {response.text}")
+                return ""
+        except Exception as e:
+            logger.error(f"HF API connection failed: {e}")
+            await asyncio.sleep(2)
+            
+    return ""
+
+def is_low_confidence(text: str) -> bool:
+    """Plausibility check for OCR results: >30% non-printable/non-ASCII chars = low confidence."""
+    if not text or len(text) < 3:
+        return True
+    bad_chars = sum(1 for c in text if not c.isprintable() or ord(c) > 127)
+    return (bad_chars / len(text)) > 0.30
+
+async def extract_text_from_page(file_bytes: bytes, page_num: int) -> dict:
+    """Async task to extract text from a single page using Adaptive TrOCR/Native strategy."""
+    # 1. Start with native extraction (fast/digital)
+    doc = fitz.open(stream=file_bytes, filetype="pdf")
+    page = doc.load_page(page_num)
+    native_text = page.get_text().strip()
+    doc.close()
+    
+    # 2. Heuristic: Sparse native text = likely scanned/handwritten
+    if len(native_text) < OCR_TEXT_THRESHOLD or is_handwritten_page(native_text):
+        logger.info(f"Starting Vision OCR for page {page_num + 1}...")
+        
+        # Adaptive DPI retry: 300 DPI first
+        text = await _run_page_trocr(file_bytes, page_num, dpi=300)
+        
+        if is_low_confidence(text):
+            logger.info(f"Low confidence text on page {page_num +1}, retrying at 600 DPI...")
+            text = await _run_page_trocr(file_bytes, page_num, dpi=600)
+            
+        return {"text": text, "ocr_used": True}
+        
+    return {"text": native_text, "ocr_used": False}
+
+async def _run_page_trocr(file_bytes: bytes, page_num: int, dpi: int) -> str:
+    """Rasterize, segment, and run TrOCR for a full page."""
+    image_np = rasterize_page(file_bytes, page_num, dpi=dpi)
+    line_crops = segment_lines(image_np)
+    
+    line_texts = []
+    for i, line_crop in enumerate(line_crops):
+        try:
+            # Wrap each line inference in timeout as per plan
+            line_text = await asyncio.wait_for(
+                run_trocr_inference(line_crop),
+                timeout=60.0
+            )
+            if line_text:
+                line_texts.append(line_text)
+        except asyncio.TimeoutError:
+            logger.warning(f"TrOCR timeout on page {page_num+1} line {i+1}")
+            continue
+            
+    return "\n".join(line_texts)
+
+def is_handwritten_page(text: str) -> bool:
+    """Additional heuristic: high non-alpha ratio in sparse text suggest notes."""
+    if not text: return True
+    alpha_count = sum(1 for c in text if c.isalpha())
+    return (alpha_count / len(text)) < 0.3
 
 
 def _decode_text(file_bytes: bytes) -> str:

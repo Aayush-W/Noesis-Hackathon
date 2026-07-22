@@ -2,6 +2,8 @@ import { ArrowLeft, FileUp, Globe, MessageSquare, Trophy, Upload, X } from "luci
 import { ChangeEvent, DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { uploadApi } from "../api/uploadApi";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db, auth } from "../firebase";
 import ChatInterface from "../components/ChatInterface";
 import QuizArena from "../components/QuizArena";
 import type { AnswerPayload } from "../types/document";
@@ -137,26 +139,70 @@ const SubjectWorkspace = () => {
     if (!files.length || uploading) return;
     setUploading(true);
     setUploadMsg(null);
+    
     try {
-      let totalChunks = 0;
-      for (const file of files) {
-        const res = await uploadApi.uploadNotes(file, subjectId);
-        totalChunks += res.chunkCount ?? 0;
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        setUploadMsg({ type: "error", text: "You must be logged in to upload notes." });
+        setUploading(false);
+        return;
       }
+
+      const uploadPromises = files.map(async (file) => {
+        const { job_id } = await uploadApi.uploadNotes(file, subjectId);
+        
+        return new Promise<{ chunks: number; files: number }>((resolve, reject) => {
+          const unsubscribe = onSnapshot(doc(db, "jobs", job_id), (snapshot) => {
+            const data = snapshot.data();
+            if (!data) return;
+
+            if (data.status === "processing") {
+              setUploadMsg({
+                type: "success",
+                text: `Processing ${file.name}: Page ${data.pages_done} of ${data.pages_total}...`
+              });
+            }
+
+            if (data.status === "completed" || data.status === "partial") {
+              unsubscribe();
+              const chunkCount = data.result?.length || 0;
+              resolve({ chunks: chunkCount, files: 1 });
+            }
+
+            if (data.status === "failed") {
+              unsubscribe();
+              reject(new Error(data.error || `Failed to process ${file.name}`));
+            }
+          }, (error) => {
+            unsubscribe();
+            reject(error);
+          });
+        });
+      });
+
+      const results = await Promise.all(uploadPromises);
+      const totalChunks = results.reduce((acc, curr) => acc + curr.chunks, 0);
+      const totalFiles = results.reduce((acc, curr) => acc + curr.files, 0);
+
       setUploadMsg({
         type: "success",
-        text: `${files.length} file(s) uploaded. ${totalChunks} chunks indexed.`,
+        text: `Mission Accomplished: ${totalFiles} file(s) indexed with ${totalChunks} chunks.`,
       });
+
       updateProgress((prev) => ({
         ...prev,
-        xp: prev.xp + files.length * 25 + Math.min(totalChunks, 120),
-        filesUploaded: prev.filesUploaded + files.length,
+        xp: prev.xp + totalFiles * 25 + Math.min(totalChunks, 120),
+        filesUploaded: prev.filesUploaded + totalFiles,
         chunksIndexed: prev.chunksIndexed + totalChunks,
       }));
+      
       setFiles([]);
       setHasUploaded(true);
     } catch (err) {
-      setUploadMsg({ type: "error", text: err instanceof Error ? err.message : "Upload failed." });
+      setUploadMsg({ 
+        type: "error", 
+        text: err instanceof Error ? err.message : "Handwriting extraction failed." 
+      });
     } finally {
       setUploading(false);
     }

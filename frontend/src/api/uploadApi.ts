@@ -1,8 +1,8 @@
-import apiClient from "./axios";
+import apiClient, { uploadAxios } from "./axios";
 import { auth } from "../firebase";
 
 export const uploadApi = {
-  async uploadNotes(file: File, subjectId: string): Promise<{ message: string, documentId: string, chunkCount: number }> {
+  async uploadNotes(file: File, subjectId: string): Promise<{ job_id: string }> {
     const user = auth.currentUser;
     if (!user) throw new Error("Not authenticated");
     const token = await user.getIdToken();
@@ -11,13 +11,13 @@ export const uploadApi = {
     formData.append("file", file);
     formData.append("subjectId", subjectId);
 
-    const res = await apiClient.post("/upload/", formData, {
+    const res = await uploadAxios.post("/upload/", formData, {
       headers: {
         "Content-Type": "multipart/form-data",
         "Authorization": `Bearer ${token}`
       }
     });
-    return res.data as { message: string, documentId: string, chunkCount: number };
+    return res.data as { job_id: string };
   },
 
   async uploadFromUrl(url: string, subjectId: string): Promise<{ message: string; documentId: string; chunkCount: number; sourceUrl: string; title: string }> {

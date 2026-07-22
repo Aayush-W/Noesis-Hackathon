@@ -7,10 +7,12 @@ from google.genai import types as genai_types
 from firebase_admin import firestore
 import os
 
-GENERATION_MODEL = "models/gemini-flash-lite-latest"
+from app.core.config import settings
+
+GENERATION_MODEL = "models/gemini-flash-latest"
 
 def _get_client():
-    return genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+    return genai.Client(api_key=settings.GEMINI_API_KEY)
 
 async def _identify_key_concepts(subject_id: str, user_id: str) -> List[str]:
     db = firestore.client()

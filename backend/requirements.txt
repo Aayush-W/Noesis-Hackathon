@@ -18,3 +18,5 @@ certifi
 dnspython
 httpx
 beautifulsoup4
+google-genai
+opencv-python-headless

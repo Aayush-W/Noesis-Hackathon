@@ -4,6 +4,7 @@ import re
 from google import genai
 import os
 import numpy as np
+from app.core.config import settings
 
 from firebase_admin import firestore
 
@@ -13,22 +14,21 @@ logger = logging.getLogger(__name__)
 
 NOT_FOUND_TEMPLATE = "Not found in your notes for {subject_name}"
 CONFIDENCE_THRESHOLDS = {"NOT_FOUND": 0.35, "LOW": 0.55, "MEDIUM": 0.75, "HIGH": 1.00}
-GENERATION_MODEL = "models/gemini-flash-lite-latest"
+GENERATION_MODEL = "models/gemini-flash-latest"
 
 class RAGError(Exception):
     pass
 
-def _get_client():
-    return genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+print(f"DEBUG: rag_service initializing with key: {settings.GEMINI_API_KEY[:10]}...")
+_client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 async def _generate_multi_queries(query: str, subject_name: str) -> list[str]:
     prompt = f"""You are a study assistant for the subject "{subject_name}". 
 The student asked: "{query}"\nGenerate 3 alternative versions of this question optimized for semantic search. Output ONLY the 3 questions, one per line."""
     try:
-        client = _get_client()
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
-            None, lambda: client.models.generate_content(model=GENERATION_MODEL, contents=prompt)
+            None, lambda: _client.models.generate_content(model=GENERATION_MODEL, contents=prompt)
         )
         queries = [q.strip() for q in response.text.strip().split('\n') if q.strip()]
         return list(dict.fromkeys([query] + queries[:3]))
@@ -109,9 +109,8 @@ async def ask_question(query: str, subject_id: str, subject_name: str, user_id: 
     prompt = f"RULES:\n1. ONLY use sources below. If not found, output EXACTLY: {NOT_FOUND_TEMPLATE.format(subject_name=subject_name)}\n2. Cite sources using [SOURCE: filename, location].\n3. Confidence is {conf['tier']}.\nHISTORY:\n{hist}\nSOURCES:\n{sources}\nQUERY: {query}"
 
     try:
-        client = _get_client()
         loop = asyncio.get_running_loop()
-        resp = await loop.run_in_executor(None, lambda: client.models.generate_content(model=GENERATION_MODEL, contents=prompt))
+        resp = await loop.run_in_executor(None, lambda: _client.models.generate_content(model=GENERATION_MODEL, contents=prompt))
         ans = (resp.text or "").strip()
     except Exception as e:
         raise RAGError(f"Gen failed: {e}")
